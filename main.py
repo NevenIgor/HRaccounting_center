@@ -113,7 +113,7 @@ class MainWindow(QtWidgets.QMainWindow):
             p.drawEllipse(3, 3, 18, 18)
             path = QtGui.QPainterPath()
             path.moveTo(12, 3)
-            path.arcTo(QtGui.QRectF(3, 3, 18, 18), 90, -180)
+            path.arcTo(QtCore.QRectF(3, 3, 18, 18), 90, -180)
             path.closeSubpath()
             p.setBrush(QtGui.QColor('#f0b429' if dark else '#5b6b7f'))
             p.drawPath(path)
@@ -141,9 +141,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tool_bar.addSeparator()
 
         # кнопка темы — в конце горизонтального тулбара, текст сбоку от иконки
-        theme_btn = self.tool_bar.addWidget(self.theme_action)
-        theme_btn.setObjectName('theme_btn')
-        theme_btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.tool_bar.addAction(self.theme_action)
+        theme_btn = self.tool_bar.widgetForAction(self.theme_action)
+        if theme_btn is not None:
+            theme_btn.setObjectName('theme_btn')
+            theme_btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
 
         self.tool_bar.setMovable(False)
         self.tool_bar.setToolButtonStyle(QtCore.Qt.ToolButtonTextUnderIcon)
@@ -301,7 +303,7 @@ class MainWindow(QtWidgets.QMainWindow):
         p.drawEllipse(3, 3, 18, 18)
         path = QtGui.QPainterPath()
         path.moveTo(12, 3)
-        path.arcTo(QtGui.QRectF(3, 3, 18, 18), 90, -180)
+        path.arcTo(QtCore.QRectF(3, 3, 18, 18), 90, -180)
         path.closeSubpath()
         p.setBrush(QtGui.QColor(col))
         p.drawPath(path)
