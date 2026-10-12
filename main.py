@@ -13,15 +13,38 @@ import datetime
 import style
 
 
-class MainTab(QtWidgets.QTabWidget):
-    # запас на padding (2*14px), рамки и жирный шрифт выбранной вкладки —
-    # текст («Документы», «Члены семьи») всегда помещается целиком
-    TAB_EXTRA_WIDTH = 60
+class _WideTabBar(QtWidgets.QTabBar):
+    """Панель вкладок, которая никогда не даёт Qt обрезать заголовки:
+    переопределяем tabSizeHint — ширина = реальный текст жирным шрифтом
+    (как в выбранной вкладке) + запас на padding из QSS (2*14px) и рамки."""
 
+    EXTRA_WIDTH = 60
+
+    def tabSizeHint(self, index):
+        size = super().tabSizeHint(index)
+        base = QtGui.QFont(self.font())
+        base.setPointSize(12)              # font-size: 12pt из QSS
+        bold = QtGui.QFont(base)
+        bold.setBold(True)                 # выбранная вкладка — жирная
+        needed = QtGui.QFontMetrics(bold).horizontalAdvance(self.tabText(index)) \
+                 + self.EXTRA_WIDTH
+        if size.width() < needed:
+            size.setWidth(needed)
+        return size
+
+
+class MainTab(QtWidgets.QTabWidget):
     def __init__(self, data, parent=None):
         super().__init__(parent=parent)
 
         self.db = parent.db
+
+        # собственная панель ярлыков: заголовки («Документы», «Члены семьи»)
+        # всегда помещаются целиком и не обрезаются до «кумен»
+        self.setTabBar(_WideTabBar(self))
+        self.tabBar().setExpanding(False)
+        self.tabBar().setElideMode(QtCore.Qt.ElideNone)
+        self.tabBar().setUsesScrollButtons(False)
 
         if data:
             data = self.db.get_data(data)[0]
@@ -39,8 +62,6 @@ class MainTab(QtWidgets.QTabWidget):
 
             if data[12] == 'True':
                 self.addTab(fizo_w, 'ФИЗО')
-
-            self._fit_tab_widths()
 
         else:
             main_layout = QtWidgets.QVBoxLayout()
@@ -64,30 +85,7 @@ class MainTab(QtWidgets.QTabWidget):
             main_layout.setAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignHCenter)
             self.setLayout(main_layout)
 
-    def _fit_tab_widths(self):
-        """Гарантирует, что заголовки вкладок не обрезаются (не «кумен»):
-        фиксируем минимальную ширину кнопки каждой вкладки = реальная ширина
-        текста жирным шрифтом (как в выбранной вкладке) + запас на отступы."""
-        base = QtGui.QFont('sans-serif', 12)
-        bold = QtGui.QFont(base)
-        bold.setBold(True)
-        fm_bold = QtGui.QFontMetrics(bold)
-        bar = self.tabBar()
-        for i in range(self.count()):
-            width = fm_bold.horizontalAdvance(self.tabText(i)) + self.TAB_EXTRA_WIDTH
-            btn = bar.tabButton(i, QtWidgets.QTabWidget.North)
-            if btn is not None:
-                btn.setMinimumWidth(width)
 
-    def showEvent(self, event):
-        # после показа (и после пересоздания вкладки при смене темы)
-        # перепроверяем ширины, чтобы текст вкладок гарантированно влезал
-        super().showEvent(event)
-        if self.count():
-            self._fit_tab_widths()
-
-        
-    
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, db, parent=None):
         super().__init__(parent=parent)
@@ -254,8 +252,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.gp_label.mousePressEvent = lambda ev: self.h_slider.setValue(0)
         self.mil_label.mousePressEvent = lambda ev: self.h_slider.setValue(1)
 
-        # подпись текущего режима — слева от ползунка, в той же строке,
-        # но не поверх него (никаких наложений)
+        # подпись текущего режима — слева от ползунка, в ТОЙ ЖЕ строке:
+        # QLabel не перекрывает слайдер (это layout, а не onTop-виджет),
+        # поэтому никакого наложения нет и ползунок остаётся кликабельным
         self.slider_value_label = QtWidgets.QLabel()
         self.slider_value_label.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
         self.slider_value_label.setStyleSheet(
@@ -272,29 +271,25 @@ class MainWindow(QtWidgets.QMainWindow):
         self.h_slider.valueChanged.connect(update_slider_caption)
         update_slider_caption(self.h_slider.value())
 
-        # строка 1: [Текущий режим] .... [ГП ВС РФ] [Военнослужащий]
-        captions_box = QtWidgets.QHBoxLayout()
-        captions_box.setContentsMargins(4, 2, 4, 0)
-        captions_box.setSpacing(10)
-        captions_box.addWidget(self.slider_value_label)
-        captions_box.addStretch(1)
-        captions_box.addWidget(self.gp_label)
-        captions_box.addWidget(self.mil_label)
-
-        # строка 2: только ползунок, целиком видимый и кликабельный
+        # строка 1: [Текущий режим] [подпись «ГП ВС РФ»] [ползунок]
+        # [подпись «Военнослужащий»] — всё в одной строке, элементы лежат
+        # рядом (layout), поэтому ползунок целиком виден и кликабелен,
+        # никакого наложения текста на него нет
         chose_box = QtWidgets.QHBoxLayout()
-        chose_box.setContentsMargins(4, 0, 4, 2)
-        chose_box.setSpacing(10)
-        chose_box.setAlignment(QtCore.Qt.AlignVCenter)
+        chose_box.setContentsMargins(4, 2, 4, 2)
+        chose_box.setSpacing(8)
+        chose_box.addWidget(self.slider_value_label)
+        chose_box.addStretch(1)
+        chose_box.addWidget(self.gp_label)
         chose_box.addWidget(self.h_slider, 1)
+        chose_box.addWidget(self.mil_label)
 
         h_box = QtWidgets.QHBoxLayout()
         h_box.addWidget(self.current_check)
         h_box.addWidget(self.archive_check)
 
         v_box = QtWidgets.QVBoxLayout()
-        v_box.setSpacing(10)
-        v_box.addLayout(captions_box)
+        v_box.setSpacing(6)
         v_box.addLayout(chose_box)
         v_box.addLayout(h_box)
 
