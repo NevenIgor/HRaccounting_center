@@ -16,11 +16,26 @@ class PersonWidget(QtWidgets.QScrollArea):
 
         self.db = parent.db
 
-        main_layout.setSpacing(16)
-        main_layout.setContentsMargins(18, 18, 18, 18)
-
-        # фон карточек (QGroupBox) задан темой; сам скролл — прозрачный
-        self.setStyleSheet('QScrollArea { border: none; background: #eef2f7; }')
+        self.setStyleSheet(''' 
+        QWidget{
+            font-size: 14pt;
+        }
+   
+        #GBox {
+            margin-top: 100px;
+            font-size: 18pt;
+        }
+        
+        #GBox::title {
+            top: -50px; 
+            left: 40px; 
+            font-size: 20pt;
+        }
+        
+        #Name {
+            font-size: 18pt;
+        }
+        ''')
 
         if main_data:
 
@@ -77,43 +92,25 @@ class PersonWidget(QtWidgets.QScrollArea):
             FROM 
             class
             WHERE
-            class."PID" = {}
-            ORDER BY
-            class.order_date DESC, class."ID" DESC;
+            class."PID" = {};
             '''.format(main_data[0])
             res = self.db.select(query)
             if res:
-                def f_d(d):
-                    return d.strftime(self.date_format) + ' г.' if d else '—'
-
-                row = res[0]
+                row = res[-1]
                 data['class_level'] = str(row[0])
-                data['class_order_date'] = f_d(row[1])
+                data['class_order_date'] = row[1].strftime(self.date_format) + ' г.'
                 data['class_order_by'] = row[2]
-                data['class_date_passing'] = f_d(row[3])
-                data['class_actual_from'] = f_d(row[4])
-                data['class_actual_to'] = f_d(row[5])
+                data['class_date_passing'] = row[3].strftime(self.date_format) + ' г.'
+                data['class_actual_from'] = row[4].strftime(self.date_format) + ' г.'
+                data['class_actual_to'] = row[5].strftime(self.date_format) + ' г.'
                 data['class_vus'] = row[6]
-                # история предыдущих классностей (старые записи сохраняются)
-                data['class_history'] = [
-                    {
-                        'level': str(r[0]),
-                        'order_date': f_d(r[1]),
-                        'order_by': r[2],
-                        'date_passing': f_d(r[3]),
-                        'actual_from': f_d(r[4]),
-                        'actual_to': f_d(r[5]),
-                        'vus': r[6],
-                    } for r in res[1:]
-                ]
 
             first_group = QtWidgets.QGroupBox('Персональные данные')
             first_group.setObjectName('GBox')
             first_level = QtWidgets.QHBoxLayout()
 
             self.img_label = QtWidgets.QLabel('')
-            self.img_label.setStyleSheet(
-                'border: 1px solid #d5dde8; border-radius: 10px; background: #ffffff;')
+            self.img_label.setStyleSheet('border: 1px solid #333')
             # self.img_label.setScaledContents(True)
             pixmap = QtGui.QPixmap()
             if blob:
@@ -235,28 +232,14 @@ class PersonWidget(QtWidgets.QScrollArea):
             class_gr = QtWidgets.QGroupBox('Классная квалификация')
             class_gr.setObjectName('GBox')
             form = QtWidgets.QFormLayout()
-            form.addRow('<b>Текущая классность:</b> ', self.labels['class']['class'])
+            form.addRow('Классность: ', self.labels['class']['class'])
             if data.get('class_level', '') != 'Нет':
                 form.addRow('ВУС: ', self.labels['class']['class_vus'])
                 form.addRow('Приказ: ', self.labels['class']['order'])
-                form.addRow('Приказ от: ', self.labels['class']['class_order_date'])
+                form.addRow('Прказ от: ', self.labels['class']['class_order_date'])
                 form.addRow('Дата сдачи: ', self.labels['class']['class_date_passing'])
                 form.addRow('Действительно с: ', self.labels['class']['class_actual_from'])
                 form.addRow('Действительно по: ', self.labels['class']['class_actual_to'])
-
-            # история предыдущих классностей — отображается строчками ниже
-            history = data.get('class_history', [])
-            if history:
-                hist_label = QtWidgets.QLabel('<b>История классности:</b>')
-                hist_label.setStyleSheet('margin-top: 8px;')
-                form.addRow('', hist_label)
-                for h in history:
-                    txt = ('{} — приказ {} от {}; ВУС {}; действ. с {} по {}'.format(
-                        h['level'], h['order_by'], h['order_date'],
-                        h['vus'] or '—', h['actual_from'], h['actual_to']))
-                    item = QtWidgets.QLabel(txt)
-                    item.setStyleSheet('color: #6b7a90;')
-                    form.addRow('', item)
             class_gr.setLayout(form)
             
             presecond_level = QtWidgets.QHBoxLayout()
@@ -399,23 +382,27 @@ class PersonWidget(QtWidgets.QScrollArea):
             auto_gr.setObjectName('GBox')
             form = QtWidgets.QFormLayout()
             query = '''
-            SELECT
-            auto.brand,
-            auto.model,
-            auto.gos_num,
-            auto.color
-            FROM
-            auto
+            SELECT 
+            auto.model, 
+            auto.gos_num, 
+            auto.agency_name, 
+            auto.agency_num, 
+            auto.agency_from, 
+            auto.agency_to
+            FROM 
+            auto 
             WHERE
             auto."PID" = {};
             '''.format(main_data[0])
             res = self.db.select(query)
             if res:
                 row = res[-1]
-                form.addRow('Марка: ', QtWidgets.QLabel(row[0] or '—'))
-                form.addRow('Модель: ', QtWidgets.QLabel(row[1] or '—'))
-                form.addRow('Гос. номер: ', QtWidgets.QLabel(row[2] or '—'))
-                form.addRow('Цвет: ', QtWidgets.QLabel(row[3] or '—'))
+                form.addRow('Марка и модель: ', QtWidgets.QLabel(row[0]))
+                form.addRow('Гос. номер: ', QtWidgets.QLabel(row[1]))
+                form.addRow('Страховая орг.: ', QtWidgets.QLabel(row[2]))
+                form.addRow('Номер полиса: ', QtWidgets.QLabel(row[3]))
+                if row[4] and row[5]:
+                    form.addRow('Срок действия: ', QtWidgets.QLabel('c {} по {}'.format(row[4].strftime(self.date_format) + ' г.', row[5].strftime(self.date_format) + ' г.')))
             else:
                 form.addRow('',QtWidgets.QLabel('Нет автомобиля'))
             auto_gr.setLayout(form)
@@ -449,6 +436,10 @@ class FIZOWidget(QtWidgets.QScrollArea):
         level = ''
         rank = ''
 
+        self.setStyleSheet(''' 
+                QWidget{
+                    font-size: 14pt;
+                }''')
         
         self.db = parent.db
         self.date_format = "%d.%m.%Y"
@@ -519,6 +510,10 @@ class DocsWidget(QtWidgets.QScrollArea):
         self.ID = ID
         self.parent = parent
 
+        self.setStyleSheet(''' 
+                        QWidget{
+                            font-size: 14pt;
+                        }''')
         
         self.db = parent.db
         self.date_format = "%d.%m.%Y"
@@ -606,6 +601,10 @@ class FamilyWidget(QtWidgets.QScrollArea):
         widget = QtWidgets.QWidget()
         main_layout = QtWidgets.QVBoxLayout(widget)
 
+        self.setStyleSheet(''' 
+                        QWidget{
+                            font-size: 14pt;
+                        }''')
         
         self.db = parent.db
         self.date_format = "%d.%m.%Y"
@@ -648,9 +647,11 @@ class Table(QtWidgets.QTableWidget):
         
         self.ident = str(ident)
 
-        self.setAlternatingRowColors(True)
-        self.verticalHeader().setVisible(False)
-
+        self.setStyleSheet(''' 
+                        QTableWidget{
+                            font-size: 14pt;
+                        }''')
+        
         self.horizontalHeader().setStretchLastSection(True)
         self.horizontalHeader().setCascadingSectionResizes(True)
         self.horizontalHeader().setSectionResizeMode(0)
