@@ -346,40 +346,33 @@ class UpdateWindow(QtWidgets.QMainWindow):
         self.auto_person_l = QtWidgets.QGridLayout()
 
         labels = []
-        labels.append(QtWidgets.QLabel('Марка и модель'))
+        labels.append(QtWidgets.QLabel('Марка'))
+        labels.append(QtWidgets.QLabel('Модель'))
         labels.append(QtWidgets.QLabel('Гос. номер'))
-        labels.append(QtWidgets.QLabel('Страховое агенство'))
-        labels.append(QtWidgets.QLabel('Номер страхового полиса'))
-        labels.append(QtWidgets.QLabel('Действителен с'))
-        labels.append(QtWidgets.QLabel('Действителен по'))
+        labels.append(QtWidgets.QLabel('Цвет'))
 
         for idx, label in enumerate(labels):
             label.setAlignment(QtCore.Qt.AlignHCenter)
             self.auto_person_l.addWidget(label, 0, idx)
 
+        self.auto_brand_edit = QtWidgets.QLineEdit()
         self.auto_model_edit = QtWidgets.QLineEdit()
         self.auto_gos_num_edit = QtWidgets.QLineEdit()
-        self.auto_agency_edit = QtWidgets.QLineEdit()
-        self.auto_osago_num = QtWidgets.QLineEdit()
-        self.auto_actual_from_edit = QtWidgets.QDateEdit()
-        self.auto_actual_from_edit.setCalendarPopup(True)
-        self.auto_actual_to_edit = QtWidgets.QDateEdit()
-        self.auto_actual_to_edit.setCalendarPopup(True)
+        self.auto_color_edit = QtWidgets.QLineEdit()
 
-        self.auto_person_l.addWidget(self.auto_model_edit, 1, 0)
-        self.auto_person_l.addWidget(self.auto_gos_num_edit, 1, 1)
-        self.auto_person_l.addWidget(self.auto_agency_edit, 1, 2)
-        self.auto_person_l.addWidget(self.auto_osago_num, 1, 3)
-        self.auto_person_l.addWidget(self.auto_actual_from_edit, 1, 4)
-        self.auto_person_l.addWidget(self.auto_actual_to_edit, 1, 5)
+        self.auto_person_l.addWidget(self.auto_brand_edit, 1, 0)
+        self.auto_person_l.addWidget(self.auto_model_edit, 1, 1)
+        self.auto_person_l.addWidget(self.auto_gos_num_edit, 1, 2)
+        self.auto_person_l.addWidget(self.auto_color_edit, 1, 3)
+
 
         self.auto_add_btn = QtWidgets.QPushButton(QtGui.QIcon(r'.\data\add.png'), '')
         self.auto_add_btn.clicked.connect(self.add_auto)
         self.auto_person_l.addWidget(self.auto_add_btn, 0, 6, 2, 1)
 
-        self.auto_table = Table(0, 6, 2)
+        self.auto_table = Table(0, 4, 2)
         self.auto_table.setHorizontalHeaderLabels(
-            ('Марка и модель', 'Гос. номер', 'Страховое агенство', 'Номер страхового полиса', 'Действителен с', 'Действителен по'))
+            ('Марка', 'Модель', 'Гос. номер', 'Цвет'))
         self.auto_table.signal.connect(self.update_auto)
 
         self.auto_l.addLayout(self.auto_person_l)
@@ -588,19 +581,15 @@ class UpdateWindow(QtWidgets.QMainWindow):
 
         for i in range(self.auto_table.rowCount()):
 
-            query = """UPDATE auto SET model = ?,
+            query = """UPDATE auto SET brand = ?,
+            model = ?,
             gos_num = ?,
-            agency_name = ?,
-            agency_num = ?,
-            agency_from = ?,
-            agency_to = ?
+            color = ?
             WHERE "ID" = {}""".format(self.auto_table.id_list[i])
             self.db.execute_n(query, (self.auto_table.item(i, 0).text(),
                                       self.auto_table.item(i, 1).text(),
                                       self.auto_table.item(i, 2).text(),
-                                      self.auto_table.item(i, 3).text(),
-                                      f_date(self.auto_table.item(i, 4).text()),
-                                      f_date(self.auto_table.item(i, 4).text()),))
+                                      self.auto_table.item(i, 3).text(),))
 
         for i in range(self.class_table.rowCount()):
 
@@ -737,7 +726,28 @@ class UpdateWindow(QtWidgets.QMainWindow):
         except Exception as e:
             self.db.connection.commit()
             self.error(str(e))
-        
+
+        new_id = self.db.last_insert_id("class", self.pid)
+
+        # История: старая текущая классность сохраняется, а не перезаписывается.
+        # Если у предыдущей действующей записи период был открыт (actual_to не задан),
+        # закрываем его датой начала новой классности.
+        prev_rows = self.db.select(
+            '''SELECT "ID", actual_to FROM class
+               WHERE PID = '{}' AND "ID" != {}
+               ORDER BY order_date DESC, "ID" DESC'''.format(self.pid, new_id))
+        if prev_rows and not prev_rows[0][1]:
+            close_date = actual_to if actual_to else actual_from
+            self.db.execute_n(
+                'UPDATE class SET actual_to = ? WHERE "ID" = ?',
+                (close_date, prev_rows[0][0]))
+            for i, row_id in enumerate(self.class_table.id_list):
+                if row_id == prev_rows[0][0]:
+                    item = self.class_table.item(i, 6)
+                    if item is None or not item.text():
+                        self.class_table.setItem(i, 6, QtWidgets.QTableWidgetItem(
+                            close_date.strftime(self.date_format)))
+
         self.class_table.insertRow(self.class_table.rowCount())
         self.class_table.setItem(self.class_table.rowCount() - 1, 0, QtWidgets.QTableWidgetItem(class_typ))
         self.class_table.setItem(self.class_table.rowCount() - 1, 1, QtWidgets.QTableWidgetItem(self.class_date_passing_edit.text()))
@@ -747,8 +757,7 @@ class UpdateWindow(QtWidgets.QMainWindow):
         self.class_table.setItem(self.class_table.rowCount() - 1, 5, QtWidgets.QTableWidgetItem(self.class_actual_from.text()))
         self.class_table.setItem(self.class_table.rowCount() - 1, 6, QtWidgets.QTableWidgetItem(self.class_actual_to.text()))
 
-        query = """SELECT "ID" FROM class"""
-        self.class_table.id_list.append(self.db.select(query)[-1][0])
+        self.class_table.id_list.append(new_id)
     
     def add_fizo(self):
         category = self.fizo_type_edit.currentText()
@@ -789,17 +798,15 @@ class UpdateWindow(QtWidgets.QMainWindow):
                 self.error(str(e))
 
     def add_auto(self):
+        brand = self.auto_brand_edit.text()
         model = self.auto_model_edit.text()
         num = self.auto_gos_num_edit.text()
-        agency = self.auto_agency_edit.text()
-        polis = self.auto_osago_num.text()
-        date_from = self.auto_actual_from_edit.dateTime().toPyDateTime().date()
-        date_to = self.auto_actual_to_edit.dateTime().toPyDateTime().date()
+        color = self.auto_color_edit.text()
 
         query = """
-        INSERT INTO auto (PID, model, gos_num, agency_name, agency_num, agency_from, agency_to)
-        VALUES ('{}', '{}', '{}', '{}', '{}', '{}', '{}')
-        """.format(self.pid, model, num, agency, polis, date_from, date_to)
+        INSERT INTO auto (PID, brand, model, gos_num, color)
+        VALUES ('{}', '{}', '{}', '{}', '{}')
+        """.format(self.pid, brand, model, num, color)
 
         try:
             self.db.execute(query)
@@ -808,15 +815,12 @@ class UpdateWindow(QtWidgets.QMainWindow):
             self.error(str(e))
 
         self.auto_table.insertRow(self.auto_table.rowCount())
-        self.auto_table.setItem(self.auto_table.rowCount() - 1, 0, QtWidgets.QTableWidgetItem(model))
-        self.auto_table.setItem(self.auto_table.rowCount() - 1, 1, QtWidgets.QTableWidgetItem(num))
-        self.auto_table.setItem(self.auto_table.rowCount() - 1, 2, QtWidgets.QTableWidgetItem(agency))
-        self.auto_table.setItem(self.auto_table.rowCount() - 1, 3, QtWidgets.QTableWidgetItem(polis))
-        self.auto_table.setItem(self.auto_table.rowCount() - 1, 4, QtWidgets.QTableWidgetItem(self.auto_actual_from_edit.text()))
-        self.auto_table.setItem(self.auto_table.rowCount() - 1, 5, QtWidgets.QTableWidgetItem(self.auto_actual_to_edit.text()))
+        self.auto_table.setItem(self.auto_table.rowCount() - 1, 0, QtWidgets.QTableWidgetItem(brand))
+        self.auto_table.setItem(self.auto_table.rowCount() - 1, 1, QtWidgets.QTableWidgetItem(model))
+        self.auto_table.setItem(self.auto_table.rowCount() - 1, 2, QtWidgets.QTableWidgetItem(num))
+        self.auto_table.setItem(self.auto_table.rowCount() - 1, 3, QtWidgets.QTableWidgetItem(color))
 
-        query = """SELECT "ID" FROM auto"""
-        self.auto_table.id_list.append(self.db.select(query)[-1][0])
+        self.auto_table.id_list.append(self.db.last_insert_id("auto", self.pid))
 
     def add_lgot(self):
         lgots = ''
@@ -915,14 +919,12 @@ class UpdateWindow(QtWidgets.QMainWindow):
 
     def update_auto(self, typ):
         columns = {
-            0: "auto",
-            1: "gos_num",
-            2: "agency_name",
-            3: "agency_num",
-            4: "agency_from",
-            5: "agency_to"
+            0: "brand",
+            1: "model",
+            2: "gos_num",
+            3: "color"
         }
-        self.update_table(typ, self.auto_table, 'auto', columns, (4, 5))
+        self.update_table(typ, self.auto_table, 'auto', columns, ())
 
     def update_class(self, typ):
         columns = {
@@ -1259,25 +1261,25 @@ class ChangeWindow(UpdateWindow):
                     '''.format(self.pid)
         res = self.db.select(query)
         if res:
+            def c_date(d):
+                return d.strftime(self.date_format) if d else ''
             for idx, line in enumerate(res):
                 self.class_table.insertRow(self.class_table.rowCount())
                 self.class_table.setItem(idx, 0, QtWidgets.QTableWidgetItem(line[0]))
-                self.class_table.setItem(idx, 1, QtWidgets.QTableWidgetItem(line[3].strftime(self.date_format)))
+                self.class_table.setItem(idx, 1, QtWidgets.QTableWidgetItem(c_date(line[3])))
                 self.class_table.setItem(idx, 2, QtWidgets.QTableWidgetItem(line[2]))
-                self.class_table.setItem(idx, 3, QtWidgets.QTableWidgetItem(line[1].strftime(self.date_format)))
+                self.class_table.setItem(idx, 3, QtWidgets.QTableWidgetItem(c_date(line[1])))
                 self.class_table.setItem(idx, 4, QtWidgets.QTableWidgetItem(line[6]))
-                self.class_table.setItem(idx, 5, QtWidgets.QTableWidgetItem(line[4].strftime(self.date_format)))
-                self.class_table.setItem(idx, 6, QtWidgets.QTableWidgetItem(line[5].strftime(self.date_format)))
+                self.class_table.setItem(idx, 5, QtWidgets.QTableWidgetItem(c_date(line[4])))
+                self.class_table.setItem(idx, 6, QtWidgets.QTableWidgetItem(c_date(line[5])))
                 self.class_table.id_list.append(line[-1])
 
         query = '''
                     SELECT 
+                    auto.brand, 
                     auto.model, 
                     auto.gos_num, 
-                    auto.agency_name, 
-                    auto.agency_num, 
-                    auto.agency_from, 
-                    auto.agency_to,
+                    auto.color,
                     auto."ID"
                     FROM 
                     auto 
@@ -1288,12 +1290,10 @@ class ChangeWindow(UpdateWindow):
         if res:
             for idx, line in enumerate(res):
                 self.auto_table.insertRow(self.auto_table.rowCount())
-                self.auto_table.setItem(idx, 0, QtWidgets.QTableWidgetItem(line[0]))
-                self.auto_table.setItem(idx, 1, QtWidgets.QTableWidgetItem(line[1]))
-                self.auto_table.setItem(idx, 2, QtWidgets.QTableWidgetItem(line[2]))
-                self.auto_table.setItem(idx, 3, QtWidgets.QTableWidgetItem(line[3]))
-                self.auto_table.setItem(idx, 4, QtWidgets.QTableWidgetItem(line[4].strftime(self.date_format)))
-                self.auto_table.setItem(idx, 5, QtWidgets.QTableWidgetItem(line[5].strftime(self.date_format)))
+                self.auto_table.setItem(idx, 0, QtWidgets.QTableWidgetItem(line[0] or ''))
+                self.auto_table.setItem(idx, 1, QtWidgets.QTableWidgetItem(line[1] or ''))
+                self.auto_table.setItem(idx, 2, QtWidgets.QTableWidgetItem(line[2] or ''))
+                self.auto_table.setItem(idx, 3, QtWidgets.QTableWidgetItem(line[3] or ''))
                 self.auto_table.id_list.append(line[-1])
 
 

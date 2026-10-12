@@ -10,6 +10,7 @@ from InsertWindow import InsertWindow, ChangeWindow
 from Fizo_window import FizoWindow
 import Tab_widgets2
 import datetime
+import style
 
 
 class MainTab(QtWidgets.QTabWidget):
@@ -37,13 +38,22 @@ class MainTab(QtWidgets.QTabWidget):
 
         else:
             main_layout = QtWidgets.QVBoxLayout()
+            main_layout.setSpacing(18)
             logo_w = QtWidgets.QLabel('')
             pixmap = QtGui.QPixmap('./data/logo.png')
-            logo_w.setPixmap(pixmap)
+            logo_w.setPixmap(pixmap.scaled(160, 160,
+                                           QtCore.Qt.KeepAspectRatio,
+                                           QtCore.Qt.SmoothTransformation))
             logo_w.setAlignment(QtCore.Qt.AlignHCenter | QtCore.Qt.AlignCenter)
             main_layout.addWidget(logo_w)
-            logo_label = QtWidgets.QLabel('<center>СПО учета личного состава</center>')
-            logo_label.setStyleSheet('font-size: 24pt;font')
+            logo_label = QtWidgets.QLabel(
+                '<div align="center">'
+                '<span style="font-size:26pt;font-weight:700;color:{};">'
+                'СПО учета личного состава</span><br>'
+                '<span style="font-size:13pt;color:{};">'
+                'Выберите сотрудника из списка слева или добавьте новый профиль'
+                '</span></div>'.format(style.ACCENT, style.MUTED))
+            logo_label.setStyleSheet('background: transparent; border: none;')
             main_layout.addWidget(logo_label)
             main_layout.setAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignHCenter)
             self.setLayout(main_layout)
@@ -56,13 +66,12 @@ class MainWindow(QtWidgets.QMainWindow):
         
         self.db = DB(db)
 
-        self.setStyleSheet('''
-        QTabWidget{
-            font-size: 14pt;
-        }
-        ''')
-        
         self.tool_bar = QtWidgets.QToolBar()
+        self.tool_bar.setOrientation(QtCore.Qt.Vertical)
+        self.tool_bar.setIconSize(QtCore.QSize(42, 42))
+        self.tool_bar.setToolButtonStyle(QtCore.Qt.ToolButtonTextUnderIcon)
+        self.tool_bar.setMovable(False)
+        self.tool_bar.setFloatable(False)
 
         insert_profile = QtWidgets.QAction(QtGui.QIcon('./data/add.png'), 'Добавить', self)
         insert_profile.triggered.connect(self.insert)
@@ -103,9 +112,10 @@ class MainWindow(QtWidgets.QMainWindow):
         
         self.tool_bar.setMovable(False)
         self.tool_bar.setToolButtonStyle(QtCore.Qt.ToolButtonTextUnderIcon)
-        self.tool_bar.setIconSize(QtCore.QSize(50, 50))
+        self.tool_bar.setIconSize(QtCore.QSize(42, 42))
 
         self.central_widget = QtWidgets.QWidget()
+        self.central_widget.setObjectName('CentralHost')
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self.hbox = QtWidgets.QHBoxLayout()
         self.person_widget = MainTab(None, parent=self)
@@ -133,7 +143,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.list.currentRowChanged.connect(self.row_changed)
         
         self.search_area = QtWidgets.QVBoxLayout()
-        
+        self.search_area.setSpacing(12)
+        self.search_area.setContentsMargins(10, 10, 10, 10)
+
+        search_header = QtWidgets.QLabel('Поиск сотрудников')
+        search_header.setStyleSheet(
+            'font-size: 14pt; font-weight: 700; color: {};'.format(style.ACCENT))
+        self.search_area.addWidget(search_header)
+
         search_spec = QtWidgets.QGroupBox('Параметры поиска')
 
         self.current_check = QtWidgets.QCheckBox('Действующий')
@@ -148,9 +165,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.h_slider.valueChanged.connect(self.search_spec_changed)
         
         chose_box = QtWidgets.QHBoxLayout()
-        chose_box.addWidget(QtWidgets.QLabel('ГП ВС РФ'))
+        gp_label = QtWidgets.QLabel('ГП ВС РФ')
+        gp_label.setStyleSheet('color: {};'.format(style.MUTED))
+        mil_label = QtWidgets.QLabel('Военносл.')
+        mil_label.setStyleSheet('color: {};'.format(style.MUTED))
+        chose_box.addWidget(gp_label)
         chose_box.addWidget(self.h_slider)
-        chose_box.addWidget(QtWidgets.QLabel('Военносл.'))
+        chose_box.addWidget(mil_label)
         
         h_box = QtWidgets.QHBoxLayout()
         h_box.addWidget(self.current_check)
@@ -163,14 +184,20 @@ class MainWindow(QtWidgets.QMainWindow):
         search_spec.setLayout(v_box)
         
         self.search_row = QtWidgets.QHBoxLayout()
+        self.search_row.setSpacing(8)
         self.search_field = QtWidgets.QLineEdit()
+        self.search_field.setPlaceholderText('Фамилия…')
         self.search_field.textChanged.connect(self.find)
         self.search_btn = QtWidgets.QPushButton(QtGui.QIcon('./data/find.png'), '')
+        self.search_btn.setObjectName('GhostBtn')
+        self.search_btn.setFixedWidth(46)
         self.search_btn.clicked.connect(self.find)
         self.search_row.addWidget(self.search_field)
         self.search_row.addWidget(self.search_btn)
         
-        self.search_update_btn = QtWidgets.QPushButton(QtGui.QIcon('./data/refresh.png'), '')
+        self.search_update_btn = QtWidgets.QPushButton(
+            QtGui.QIcon('./data/refresh.png'), ' Обновить список')
+        self.search_update_btn.setObjectName('GhostBtn')
         self.search_update_btn.clicked.connect(self.find)
         
         self.search_area.addWidget(search_spec)
@@ -179,21 +206,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self.search_area.addWidget(self.search_update_btn)
         self.search_w = QtWidgets.QWidget()
         self.search_w.setLayout(self.search_area)
-        self.search_w.setMaximumWidth(250)
+        self.search_w.setMinimumWidth(260)
+        self.search_w.setMaximumWidth(340)
 
         self.splitter.addWidget(self.search_w)
         self.splitter.addWidget(self.person_widget)
         #self.splitter.addWidget(self.scroll_area)
+        self.hbox.setContentsMargins(12, 12, 12, 12)
         self.hbox.addWidget(self.splitter)
         self.central_widget.setLayout(self.hbox)
 
-        self.splitter.setHandleWidth(15)
+        self.splitter.setHandleWidth(12)
+        self.splitter.setCollapsible(0, False)
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
 
         self.statusbar = QtWidgets.QStatusBar()
 
         self.setCentralWidget(self.central_widget)
-        self.addToolBar(self.tool_bar)
+        self.addToolBar(QtCore.Qt.LeftToolBarArea, self.tool_bar)
         self.setStatusBar(self.statusbar)
+        self.statusbar.showMessage('Готово')
         
         self.search_spec_query = ''
         self.search_spec_changed()
