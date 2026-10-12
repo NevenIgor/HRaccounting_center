@@ -225,64 +225,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self.current_check = QtWidgets.QCheckBox('Действующий')
         self.archive_check = QtWidgets.QCheckBox('Резерв')
         self.current_check.setChecked(True)
-        self.h_slider = QtWidgets.QSlider()
-        self.h_slider.setMaximum(1)
-        self.h_slider.setPageStep(1)
-        self.h_slider.setOrientation(QtCore.Qt.Horizontal)
         self.current_check.stateChanged.connect(self.search_spec_changed)
         self.archive_check.stateChanged.connect(self.search_spec_changed)
-        self.h_slider.valueChanged.connect(self.search_spec_changed)
-        
-        # переключатель «Военнослужащий / ГП»: ползунок на отдельной строке,
-        # без наложений — сначала строка подписей, ниже строка самого ползунка.
-        self.h_slider.setMinimumWidth(140)
-        self.h_slider.setMinimumHeight(36)
-        self.h_slider.setMaximumHeight(36)
-        self.h_slider.setPageStep(1)
-        self.h_slider.setFocusPolicy(QtCore.Qt.NoFocus)
 
-        # подписи по краям ползунка — кликабельны и переключают его
-        self.gp_label = QtWidgets.QLabel('ГП ВС РФ')
-        self.mil_label = QtWidgets.QLabel('Военнослужащий')
-        for lbl in (self.gp_label, self.mil_label):
-            lbl.setCursor(QtCore.Qt.PointingHandCursor)
-            lbl.setStyleSheet('font-size: 11pt;')
-            lbl.setAlignment(QtCore.Qt.AlignVCenter)
+        # переключатель «Военнослужащий / ГП»: два взаимоисключающих
+        # radiobutton в одной группе — по умолчанию выбран «ВС».
+        self.mil_radio = QtWidgets.QRadioButton('Военнослужащий')
+        self.gp_radio = QtWidgets.QRadioButton('ГП ВС РФ')
+        self.mil_radio.setChecked(True)
+        self.mil_radio.setCursor(QtCore.Qt.PointingHandCursor)
+        self.gp_radio.setCursor(QtCore.Qt.PointingHandCursor)
+        self.mil_radio.setStyleSheet('font-size: 11pt;')
+        self.gp_radio.setStyleSheet('font-size: 11pt;')
+        self.mil_radio.toggled.connect(self.search_spec_changed)
+        self.gp_radio.toggled.connect(self.search_spec_changed)
 
-        self.gp_label.mousePressEvent = lambda ev: self.h_slider.setValue(0)
-        self.mil_label.mousePressEvent = lambda ev: self.h_slider.setValue(1)
-
-        # подпись текущего режима — слева от ползунка, в ТОЙ ЖЕ строке:
-        # QLabel не перекрывает слайдер (это layout, а не onTop-виджет),
-        # поэтому никакого наложения нет и ползунок остаётся кликабельным
-        self.slider_value_label = QtWidgets.QLabel()
-        self.slider_value_label.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
-        self.slider_value_label.setStyleSheet(
-            'font-size: 11pt; font-weight: 600; color: {};'.format(style.ACCENT))
-
-        def update_slider_caption(value):
-            if value == 1:
-                self.slider_value_label.setText('Военнослужащие')
-            elif value == 0:
-                self.slider_value_label.setText('ГП ВС РФ')
-            else:
-                self.slider_value_label.setText('Все')
-
-        self.h_slider.valueChanged.connect(update_slider_caption)
-        update_slider_caption(self.h_slider.value())
-
-        # строка 1: [Текущий режим] [подпись «ГП ВС РФ»] [ползунок]
-        # [подпись «Военнослужащий»] — всё в одной строке, элементы лежат
-        # рядом (layout), поэтому ползунок целиком виден и кликабелен,
-        # никакого наложения текста на него нет
         chose_box = QtWidgets.QHBoxLayout()
         chose_box.setContentsMargins(4, 2, 4, 2)
-        chose_box.setSpacing(8)
-        chose_box.addWidget(self.slider_value_label)
+        chose_box.setSpacing(12)
+        chose_box.addWidget(self.mil_radio)
+        chose_box.addWidget(self.gp_radio)
         chose_box.addStretch(1)
-        chose_box.addWidget(self.gp_label)
-        chose_box.addWidget(self.h_slider, 1)
-        chose_box.addWidget(self.mil_label)
 
         h_box = QtWidgets.QHBoxLayout()
         h_box.addWidget(self.current_check)
@@ -342,10 +305,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.statusbar.showMessage('Готово')
         
         self.search_spec_query = ''
+        # по умолчанию выбран «Военнослужащий» — применяем фильтр
+        self.mil_radio.setChecked(True)
         self.search_spec_changed()
-
-        self.h_slider.setValue(1)
-        update_slider_caption(self.h_slider.value())
         
     def toggle_dark_theme(self):
         """Включает/выключает чёрную тему СПО (кнопка на тулбаре)."""
@@ -388,11 +350,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def search_spec_changed(self):
         self.search_spec_query = ''
-        if self.h_slider.value() == 1:
+        if self.mil_radio.isChecked():
             self.search_spec_query += "AND persons.mil = 'True' "
-        elif self.h_slider.value() == 0:
+        elif self.gp_radio.isChecked():
             self.search_spec_query += "AND persons.mil = 'False' "
-        # value == -1 (ни один переключатель не выбран) — не фильтруем по типу
+        else:
+            # ни одна кнопка не выбрана (можно снять выбор, если понадобится)
+            # — не фильтруем по типу
+            pass
         if self.current_check.isChecked() and not self.archive_check.isChecked():
             self.search_spec_query += "AND persons.active = 'True' "
         elif not self.current_check.isChecked() and self.archive_check.isChecked():
