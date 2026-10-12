@@ -468,6 +468,103 @@ class LgotyWidget(QtWidgets.QWidget):
             self.db.connection.commit()
 
 
+class FinancingWidget(QtWidgets.QWidget):
+    """Словарь 'Финансовое обеспечение' — пункты для карточки сотрудника."""
+
+    def __init__(self, db, parent=None):
+        super().__init__(parent=parent)
+
+        self.db = db
+
+        self.ui = Widgets.Ui_rewards_widget('Финансовое обеспечение')
+        self.ui.setupUi(self)
+
+        self.ui.pushButton.clicked.connect(self.add)
+        self.ui.tableWidget.signal.connect(self.delete)
+        self.ui.tableWidget.signal.connect(self.update)
+
+        self.ui.tableWidget.id_list.clear()
+        query = """
+        SELECT name, "ID"
+          FROM financing
+         ORDER BY name ASC;
+        """
+        result = self.db.select(query)
+        if result:
+            for idx, row in enumerate(result):
+                self.ui.tableWidget.insertRow(self.ui.tableWidget.rowCount())
+                self.ui.tableWidget.setItem(idx, 0, QtWidgets.QTableWidgetItem(row[0]))
+                self.ui.tableWidget.id_list.append(row[-1])
+
+        self.ui.tableWidget.restore()
+
+    def add(self):
+        sp = self.ui.lineEdit.text().strip()
+        if not sp:
+            return
+
+        query = """
+        INSERT INTO financing(
+            name)
+        VALUES ('{}');
+        """.format(sp.replace("'", "''"))
+
+        try:
+            self.db.execute(query)
+        except Exception as e:
+            self.db.connection.commit()
+            QtWidgets.QMessageBox.critical(self, 'Ошибка!', str(e), defaultButton=QtWidgets.QMessageBox.Ok)
+            return
+
+        self.ui.tableWidget.insertRow(self.ui.tableWidget.rowCount())
+        self.ui.tableWidget.setItem(self.ui.tableWidget.rowCount() - 1, 0, QtWidgets.QTableWidgetItem(sp))
+
+        query = """SELECT "ID" FROM financing"""
+        self.ui.tableWidget.id_list.append(self.db.select(query)[-1][0])
+
+        self.ui.lineEdit.clear()
+
+    def delete(self, typ):
+        if typ == 'delete':
+            rows = set()
+            for index in self.ui.tableWidget.selectedIndexes():
+                rows.add(index.row())
+            for row in list(rows)[::-1]:
+                query = """
+                DELETE FROM financing
+                WHERE "ID" = {};
+                """.format(self.ui.tableWidget.id_list[row])
+                try:
+                    self.db.execute(query)
+                except Exception as e:
+                    self.db.connection.commit()
+                    QtWidgets.QMessageBox.critical(self, 'Ошибка!', str(e), defaultButton=QtWidgets.QMessageBox.Ok)
+                self.ui.tableWidget.id_list.pop(row)
+                self.ui.tableWidget.removeRow(row)
+        elif typ == 'update':
+            if self.ui.tableWidget.selectedIndexes():
+                column = {
+                    0: 'name',
+                }
+                col_n = column.get(self.ui.tableWidget.selectedIndexes()[0].column(), None)
+                if col_n:
+                    head = """UPDATE financing SET {} = '""".format(col_n)
+                    tail = """' WHERE "ID" = {}""".format(
+                        self.ui.tableWidget.id_list[self.ui.tableWidget.selectedIndexes()[0].row()])
+                    item = self.ui.tableWidget.currentItem()
+                    self.thread = threading.Thread(target=self.update_db, args=(head, tail, item), daemon=True)
+                    self.thread.start()
+
+    def update_db(self, head, tail, item):
+        time.sleep(0.5)
+        query = head + item.text().replace("'", "''") + tail
+        print(query)
+        try:
+            self.db.execute(query)
+        except Exception as e:
+            self.db.connection.commit()
+
+
 class DataWindow(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -499,6 +596,7 @@ class DataWindow(QtWidgets.QMainWindow):
         self.list_widget.addItem(QtWidgets.QListWidgetItem('Виды семейного положения'))
         self.list_widget.addItem(QtWidgets.QListWidgetItem('Типы кредитной задолжности'))
         self.list_widget.addItem(QtWidgets.QListWidgetItem('Льготы'))
+        self.list_widget.addItem(QtWidgets.QListWidgetItem('Финансовое обеспечение'))
         self.list_widget.setMaximumWidth(250)
         
         self.layout.addWidget(self.list_widget)
@@ -524,6 +622,7 @@ class DataWindow(QtWidgets.QMainWindow):
             'Виды семейного положения': FamilyWidget(db),
             'Типы кредитной задолжности': DolgsWidget(db), #PunishWidget(db),
             'Льготы': LgotyWidget(db),  # PunishWidget(db),
+            'Финансовое обеспечение': FinancingWidget(db),
             }
         self.current_w = self.w_dict.get(self.list_widget.currentItem().text(), None)
         self.layout.replaceWidget(1, self.w_dict.get(self.list_widget.currentItem().text(), self.main_w))

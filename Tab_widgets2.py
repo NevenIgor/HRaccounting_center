@@ -33,35 +33,35 @@ class PersonWidget(QtWidgets.QScrollArea):
                         
             data = dict()
             
-            data['number'] = main_data[1]
-            data['surname'] = main_data[2]
-            data['name'] = main_data[3]
-            data['patr'] = main_data[4]
-            data['place_of_birth'] = main_data[5]
+            data['number'] = main_data[1] or ''
+            data['surname'] = main_data[2] or ''
+            data['name'] = main_data[3] or ''
+            data['patr'] = main_data[4] or ''
+            data['place_of_birth'] = main_data[5] or ''
             data['birthday'] = main_data[6]
-            data['gender'] = main_data[7]
-            data['nation'] = main_data[8]
-            data['mobile_number'] = main_data[9]
-            data['mobile_number1'] = main_data[10]
+            data['gender'] = main_data[7] or ''
+            data['nation'] = main_data[8] or ''
+            data['mobile_number'] = main_data[9] or ''
+            data['mobile_number1'] = main_data[10] or ''
             data['status1'] = main_data[11]
-            data['reg_addr'] = main_data[13]
-            data['liv_addr'] = main_data[14]
-            data['allowance'] = main_data[15]
-            data['allowance_by'] = main_data[16]
+            data['reg_addr'] = main_data[13] or ''
+            data['liv_addr'] = main_data[14] or ''
+            data['allowance'] = main_data[15] or ''
+            data['allowance_by'] = main_data[16] or ''
             data['allowance_date'] = main_data[17]
             if main_data[19] and main_data[19] != 'None':
                 res = self.db.select("""SELECT family_status.name FROM family_status WHERE family_status."ID" = '{}';""".format(int(main_data[19])))
                 if res:
                     data['family_status'] = res[0][0]
-            data['rank'] = main_data[20]
-            data['division'] = main_data[21]
-            data['position'] = main_data[22]
+            data['rank'] = main_data[20] or ''
+            data['division'] = main_data[21] or ''
+            data['position'] = main_data[22] or ''
             data['order_by'] = main_data[23]
             data['order_date'] = main_data[24]
-            data['person_buisness'] = main_data[26]
-            data['snils'] = main_data[27]
-            data['inn'] = main_data[28]
-            data['fizo_num'] = main_data[29]
+            data['person_buisness'] = main_data[26] or ''
+            data['snils'] = main_data[27] or ''
+            data['inn'] = main_data[28] or ''
+            data['fizo_num'] = main_data[29] or ''
 
             blob = main_data[25]
             
@@ -146,14 +146,19 @@ class PersonWidget(QtWidgets.QScrollArea):
             p1.addWidget(self.labels['person1']['name'])
             p1.addWidget(self.labels['person1']['patr'])
             
-            years = datetime.datetime.now().year - data['birthday'].year
-            if datetime.datetime.now().month < data['birthday'].month:
-                years -= 1
-            elif datetime.datetime.now().month == data['birthday'].month:
-                if datetime.datetime.now().day < data['birthday'].day:
+            if data['birthday'] and hasattr(data['birthday'], 'year'):
+                years = datetime.datetime.now().year - data['birthday'].year
+                if datetime.datetime.now().month < data['birthday'].month:
                     years -= 1
+                elif datetime.datetime.now().month == data['birthday'].month:
+                    if datetime.datetime.now().day < data['birthday'].day:
+                        years -= 1
+            else:
+                years = None
 
-            if years < 25:
+            if years is None:
+                group = '—'
+            elif years < 25:
                 group = '1'
             elif years < 30:
                 group = '2'
@@ -174,10 +179,16 @@ class PersonWidget(QtWidgets.QScrollArea):
             self.labels['person2']['number'] = QtWidgets.QLabel(data['number'])
             self.labels['person2']['person_buisness'] = QtWidgets.QLabel(data['person_buisness'])
             self.labels['person2']['gender'] = QtWidgets.QLabel(data['gender'])
-            self.labels['person2']['birthday_date'] = QtWidgets.QLabel(data['birthday'].strftime(self.date_format) + ' г. - ' + str(years) + ' полных лет (' + group + ' возрастная группа)')
+            if data['birthday'] and hasattr(data['birthday'], 'strftime'):
+                birthday_txt = data['birthday'].strftime(self.date_format) + ' г.'
+                if years is not None:
+                    birthday_txt += ' - {} полных лет ({} возрастная группа)'.format(years, group)
+            else:
+                birthday_txt = ''
+            self.labels['person2']['birthday_date'] = QtWidgets.QLabel(birthday_txt)
             self.labels['person2']['place_of_birth'] = QtWidgets.QLabel(data['place_of_birth'])
             self.labels['person2']['nation'] = QtWidgets.QLabel(data['nation'])
-            self.labels['person2']['family_status'] = QtWidgets.QLabel(data.get('family_status'))
+            self.labels['person2']['family_status'] = QtWidgets.QLabel(data.get('family_status') or '')
             self.labels['person2']['mobile_number'] = QtWidgets.QLabel(data['mobile_number'])
             self.labels['person2']['mobile_number1'] = QtWidgets.QLabel(data['mobile_number1'])
             self.labels['person2']['snils'] = QtWidgets.QLabel(data['snils'])
@@ -212,7 +223,20 @@ class PersonWidget(QtWidgets.QScrollArea):
 
             self.labels['passage']['division'] = QtWidgets.QLabel(data.get('division', ''))
             self.labels['passage']['position'] = QtWidgets.QLabel(data.get('position', ''))
-            self.labels['passage']['order'] = QtWidgets.QLabel(data.get('order_by', '') + ' от ' + data.get('order_date', '').strftime(self.date_format))
+            # защита от пустых значений: order_by/order_date могут быть None (AttributeError)
+            order_by = data.get('order_by') or ''
+            order_date = data.get('order_date')
+            if hasattr(order_date, 'strftime'):
+                order_date = order_date.strftime(self.date_format)
+            elif order_date:
+                order_date = str(order_date)
+            else:
+                order_date = ''
+            if order_by and order_date:
+                order_text = '{} от {}'.format(order_by, order_date)
+            else:
+                order_text = order_by or order_date
+            self.labels['passage']['order'] = QtWidgets.QLabel(order_text)
 
             passage_gr = QtWidgets.QGroupBox('Должность')
             passage_gr.setObjectName('GBox')
@@ -269,8 +293,11 @@ class PersonWidget(QtWidgets.QScrollArea):
             
 
             self.labels['allowance'] = dict()
-            if data.get('allowance_date', ''):
-                allowance_date = data.get('allowance_date', '').strftime(self.date_format) + ' г.'
+            _ad = data.get('allowance_date', '')
+            if hasattr(_ad, 'strftime'):
+                allowance_date = _ad.strftime(self.date_format) + ' г.'
+            elif _ad:
+                allowance_date = str(_ad)
             else:
                 allowance_date = ''
             self.labels['allowance']['allowance_num'] = QtWidgets.QLabel(data.get('allowance', ''))
@@ -553,7 +580,8 @@ class DocsWidget(QtWidgets.QScrollArea):
                 self.table.setItem(idx, 3, QtWidgets.QTableWidgetItem(line[3]))
                 self.table.setItem(idx, 4, QtWidgets.QTableWidgetItem(line[4]))
                 self.table.setItem(idx, 5, QtWidgets.QTableWidgetItem(line[5]))
-                self.table.setItem(idx, 6, QtWidgets.QTableWidgetItem(line[6].strftime(self.date_format) + ' г.'))
+                doc_date = line[6].strftime(self.date_format) + ' г.' if hasattr(line[6], 'strftime') else (str(line[6]) if line[6] else '')
+                self.table.setItem(idx, 6, QtWidgets.QTableWidgetItem(doc_date))
                 
                 
         self.scroll_area = QtWidgets.QScrollArea()
@@ -636,7 +664,8 @@ class FamilyWidget(QtWidgets.QScrollArea):
                 self.table.setItem(idx, 1, QtWidgets.QTableWidgetItem(line[1]))
                 self.table.setItem(idx, 2, QtWidgets.QTableWidgetItem(line[2]))
                 self.table.setItem(idx, 3, QtWidgets.QTableWidgetItem(line[3]))
-                self.table.setItem(idx, 4, QtWidgets.QTableWidgetItem(line[4].strftime(self.date_format) + ' г.'))
+                fam_birthday = line[4].strftime(self.date_format) + ' г.' if hasattr(line[4], 'strftime') else (str(line[4]) if line[4] else '')
+                self.table.setItem(idx, 4, QtWidgets.QTableWidgetItem(fam_birthday))
         
         self.setWidget(widget)
         self.setWidgetResizable(True)
@@ -657,10 +686,12 @@ class Table(QtWidgets.QTableWidget):
         self.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.setWordWrap(True)
 
-        self.conf_dir = os.path.join(os.environ.get('APPDATA'), 'HRaccounting')
+        # кроссплатформенный каталог конфигурации (Windows: %APPDATA%, иначе ~/.config)
+        conf_root = os.environ.get('APPDATA') or os.path.expanduser('~/.config')
+        self.conf_dir = os.path.join(conf_root, 'HRaccounting')
         
         if not os.path.exists(self.conf_dir):
-            os.mkdir(self.conf_dir)
+            os.makedirs(self.conf_dir, exist_ok=True)
         
         self.horizontalHeader().sectionResized.connect(self.save_state)
         

@@ -13,6 +13,26 @@ class Database(object):
                                             detect_types=sqlite3.PARSE_DECLTYPES |
                                             sqlite3.PARSE_COLNAMES)
         self.cursor = self.connection.cursor()
+        self._migrate()
+
+    def _migrate(self):
+        """Лёгкая миграция схемы: словарь финансового обеспечения + ссылка в persons."""
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS financing (
+                "ID" INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT
+            );
+        ''')
+        cols = [r[1] for r in self.cursor.execute('PRAGMA table_info(persons)').fetchall()]
+        if 'financing' not in cols:
+            self.cursor.execute('ALTER TABLE persons ADD COLUMN financing INTEGER')
+        # несколько разумных пунктов по умолчанию, если словарь пуст
+        cnt = self.cursor.execute('SELECT COUNT(*) FROM financing').fetchone()[0]
+        if cnt == 0:
+            for n in ('Федеральный бюджет', 'Внебюджетные средства',
+                      'Средства бюджета субъекта РФ'):
+                self.cursor.execute('INSERT INTO financing(name) VALUES (?)', (n,))
+        self.connection.commit()
 
     def select(self, query):
         res = self.cursor.execute(query)
@@ -47,11 +67,12 @@ class Database(object):
     def get_data(self, person_ID):
         data = self.select("""
             SELECT 
-                *
+                p.*,
+                (SELECT name FROM financing WHERE financing."ID" = p.financing) AS financing_name
             FROM 
-                persons
+                persons p
             WHERE 
-                persons."ID" = '{}';
+                p."ID" = '{}';
             """.format(person_ID))
         return data    
     
