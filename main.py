@@ -14,9 +14,13 @@ import style
 
 
 class MainTab(QtWidgets.QTabWidget):
+    # запас на padding (2*14px), рамки и жирный шрифт выбранной вкладки —
+    # текст («Документы», «Члены семьи») всегда помещается целиком
+    TAB_EXTRA_WIDTH = 60
+
     def __init__(self, data, parent=None):
         super().__init__(parent=parent)
-        
+
         self.db = parent.db
 
         if data:
@@ -34,7 +38,9 @@ class MainTab(QtWidgets.QTabWidget):
             self.addTab(family_w, 'Члены семьи')
 
             if data[12] == 'True':
-                self.addTab(fizo_w, 'ФИЗО')            
+                self.addTab(fizo_w, 'ФИЗО')
+
+            self._fit_tab_widths()
 
         else:
             main_layout = QtWidgets.QVBoxLayout()
@@ -57,6 +63,28 @@ class MainTab(QtWidgets.QTabWidget):
             main_layout.addWidget(logo_label)
             main_layout.setAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignHCenter)
             self.setLayout(main_layout)
+
+    def _fit_tab_widths(self):
+        """Гарантирует, что заголовки вкладок не обрезаются (не «кумен»):
+        фиксируем минимальную ширину кнопки каждой вкладки = реальная ширина
+        текста жирным шрифтом (как в выбранной вкладке) + запас на отступы."""
+        base = QtGui.QFont('sans-serif', 12)
+        bold = QtGui.QFont(base)
+        bold.setBold(True)
+        fm_bold = QtGui.QFontMetrics(bold)
+        bar = self.tabBar()
+        for i in range(self.count()):
+            width = fm_bold.horizontalAdvance(self.tabText(i)) + self.TAB_EXTRA_WIDTH
+            btn = bar.tabButton(i, QtWidgets.QTabWidget.North)
+            if btn is not None:
+                btn.setMinimumWidth(width)
+
+    def showEvent(self, event):
+        # после показа (и после пересоздания вкладки при смене темы)
+        # перепроверяем ширины, чтобы текст вкладок гарантированно влезал
+        super().showEvent(event)
+        if self.count():
+            self._fit_tab_widths()
 
         
     
@@ -207,16 +235,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.archive_check.stateChanged.connect(self.search_spec_changed)
         self.h_slider.valueChanged.connect(self.search_spec_changed)
         
-        chose_box = QtWidgets.QHBoxLayout()
-        chose_box.setContentsMargins(4, 2, 4, 2)
-        chose_box.setSpacing(10)
-        chose_box.setAlignment(QtCore.Qt.AlignVCenter)
-
-        # переключатель «Военнослужащий / ГП»: сам ползунок виден и кликабелен.
-        # Раньше он обрезался сверху/снизу (ручка была выше выделенного места)
-        # и перекрывался подписями, из-за чего по нему нельзя было попасть.
-        # Теперь для него зарезервирована собственная строка фиксированной
-        # высоты: ползунок целиком в ней помещается и всегда доступен клику.
+        # переключатель «Военнослужащий / ГП»: ползунок на отдельной строке,
+        # без наложений — сначала строка подписей, ниже строка самого ползунка.
         self.h_slider.setMinimumWidth(140)
         self.h_slider.setMinimumHeight(36)
         self.h_slider.setMaximumHeight(36)
@@ -234,9 +254,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.gp_label.mousePressEvent = lambda ev: self.h_slider.setValue(0)
         self.mil_label.mousePressEvent = lambda ev: self.h_slider.setValue(1)
 
-        # подпись текущего положения посередине строки
+        # подпись текущего режима — слева от ползунка, в той же строке,
+        # но не поверх него (никаких наложений)
         self.slider_value_label = QtWidgets.QLabel()
-        self.slider_value_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.slider_value_label.setAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
         self.slider_value_label.setStyleSheet(
             'font-size: 11pt; font-weight: 600; color: {};'.format(style.ACCENT))
 
@@ -251,23 +272,30 @@ class MainWindow(QtWidgets.QMainWindow):
         self.h_slider.valueChanged.connect(update_slider_caption)
         update_slider_caption(self.h_slider.value())
 
-        chose_box.addWidget(self.gp_label)
-        chose_box.addWidget(self.h_slider, 1)
-        chose_box.addWidget(self.mil_label)
+        # строка 1: [Текущий режим] .... [ГП ВС РФ] [Военнослужащий]
+        captions_box = QtWidgets.QHBoxLayout()
+        captions_box.setContentsMargins(4, 2, 4, 0)
+        captions_box.setSpacing(10)
+        captions_box.addWidget(self.slider_value_label)
+        captions_box.addStretch(1)
+        captions_box.addWidget(self.gp_label)
+        captions_box.addWidget(self.mil_label)
 
-        # строка с текущим режимом — отдельной строкой под ползунком,
-        # чтобы ничего не перекрывало сам ползунок
-        slider_caption_box = QtWidgets.QHBoxLayout()
-        slider_caption_box.setContentsMargins(4, 0, 4, 0)
-        slider_caption_box.addWidget(self.slider_value_label)
+        # строка 2: только ползунок, целиком видимый и кликабельный
+        chose_box = QtWidgets.QHBoxLayout()
+        chose_box.setContentsMargins(4, 0, 4, 2)
+        chose_box.setSpacing(10)
+        chose_box.setAlignment(QtCore.Qt.AlignVCenter)
+        chose_box.addWidget(self.h_slider, 1)
+
         h_box = QtWidgets.QHBoxLayout()
         h_box.addWidget(self.current_check)
         h_box.addWidget(self.archive_check)
 
         v_box = QtWidgets.QVBoxLayout()
         v_box.setSpacing(10)
+        v_box.addLayout(captions_box)
         v_box.addLayout(chose_box)
-        v_box.addLayout(slider_caption_box)
         v_box.addLayout(h_box)
 
         search_spec.setLayout(v_box)
