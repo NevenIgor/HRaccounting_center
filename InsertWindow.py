@@ -123,6 +123,9 @@ class UpdateWindow(QtWidgets.QMainWindow):
         self.labels['gender'].addItem('М')
         self.labels['gender'].addItem('Ж')
         self.labels['fizo_num'] = QtWidgets.QLineEdit()
+        # вид финансового обеспечения — из словаря
+        self.labels['financing'] = QtWidgets.QComboBox()
+        self._load_financing()
         
         form1 = QtWidgets.QFormLayout()
         form1.addRow('Фамилия:', self.labels['surname'])
@@ -154,6 +157,7 @@ class UpdateWindow(QtWidgets.QMainWindow):
         form3.addRow('Допуск выдан:', self.labels['allowance_by'])
         form3.addRow('Дата выдачи:', self.labels['allowance_date'])
         form3.addRow('Номерок ФИЗО:', self.labels['fizo_num'])
+        form3.addRow('Финансовое обеспечение:', self.labels['financing'])
 
         first_level = QtWidgets.QHBoxLayout()
         first_level.addLayout(img_l)
@@ -657,6 +661,29 @@ class UpdateWindow(QtWidgets.QMainWindow):
     def person_ID_changed(self):
         pass
 
+    def _load_financing(self, selected_id=None):
+        """Заполняет комбобокс 'Финансовое обеспечение' из словаря."""
+        combo = self.labels['financing']
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem('—', None)
+        res = self.db.select('SELECT "ID", name FROM financing ORDER BY name ASC;')
+        if res:
+            for row in res:
+                combo.addItem(row[1], row[0])
+        idx = 0
+        if selected_id is not None:
+            for i in range(combo.count()):
+                if combo.itemData(i) == int(selected_id):
+                    idx = i
+                    break
+        combo.setCurrentIndex(idx)
+        combo.blockSignals(False)
+
+    def currentFinancingId(self):
+        data = self.labels['financing'].itemData(self.labels['financing'].currentIndex())
+        return 'NULL' if data is None else "'{}'".format(data)
+
     def set_img(self):
         dialog = QtWidgets.QFileDialog(self, '', '', filter="Images (*.png *.jpg)")
         res = dialog.exec_()
@@ -1009,11 +1036,11 @@ class InsertWindow(UpdateWindow):
                 gender, nation, phone_num1, phone_num2, active, mil, address_reg, 
                 address_living, allowance_num, allowance_by, allowance_date, 
                 family_status, rank, division, "position", order_by, order_date, person_buisness,
-                snils, inn, fizo_num)
+                snils, inn, fizo_num, financing)
             VALUES ('{}', '{}', '{}', '{}', '{}', '{}', 
                     '{}', '{}', '{}', '{}', '{}', '{}', '{}', 
                     '{}', '{}', '{}', '{}', 
-                    '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');
+                    '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', {});
             ;
             """.format(
                     data['number'],
@@ -1042,7 +1069,8 @@ class InsertWindow(UpdateWindow):
                     data['buisness'],
                     data['snils'],
                     data['inn'],
-                    data['fizo_num']
+                    data['fizo_num'],
+                    self.currentFinancingId()
                 )
             try:
                 self.db.execute(query)
@@ -1125,6 +1153,14 @@ class ChangeWindow(UpdateWindow):
         data['snils'] = main_data[27]
         data['inn'] = main_data[28]
         data['fizo_num'] = main_data[29]
+        # вид финансового обеспечения (колонка persons.financing)
+        data['financing'] = None
+        try:
+            res_fin = self.db.select("SELECT financing FROM persons WHERE \"ID\" = {};".format(main_data[0]))
+            if res_fin and res_fin[0][0] is not None:
+                data['financing'] = int(res_fin[0][0])
+        except Exception:
+            pass
         
         for i in range(1, len(self.tab_widget)):
             self.tab_widget.setTabEnabled(i, True)
@@ -1171,6 +1207,7 @@ class ChangeWindow(UpdateWindow):
         self.labels['snils'].setText(data['snils'])
         self.labels['inn'].setText(data['inn'])
         self.labels['fizo_num'].setText(data['fizo_num'])
+        self._load_financing(data.get('financing'))
 
         query = f'''
         SELECT second_name, first_name, patr FROM persons where ID = '{self.pid}'
@@ -1432,7 +1469,8 @@ class ChangeWindow(UpdateWindow):
         "person_buisness" = '{}',
         "snils" = '{}',
         "inn" = '{}',
-        "fizo_num" = '{}'
+        "fizo_num" = '{}',
+        "financing" = {}
         WHERE "ID"='{}'            
         """.format(
             data['number'],
@@ -1462,6 +1500,7 @@ class ChangeWindow(UpdateWindow):
                 data['snils'],
                 data['inn'],
                 data['fizo_num'],
+                self.currentFinancingId(),
                 self.pid
             )
         try:

@@ -80,6 +80,11 @@ def _sync_globals():
     g['ACCENT'] = P['ACCENT']
     g['ACCENT_DARK'] = P['ACCENT_DARK']
     g['ACCENT_LIGHT'] = P['ACCENT_LIGHT']
+    # остальные цвета палитры — автоматически, чтобы style.BG / style.SURFACE и т.д.
+    # всегда соответствовали активной теме
+    for k, v in P.items():
+        if k not in g or g[k] != v:
+            g[k] = v
     g['SUCCESS'] = P['SUCCESS']
     g['DANGER'] = P['DANGER']
     g['BG'] = P['BG']
@@ -135,6 +140,27 @@ QToolBar {{
     border-bottom: 1px solid {BD};
     padding: 8px 12px;
     spacing: 6px;
+}}
+
+/* правая часть тулбара — прижимает кнопку темы к краю окна */
+QToolButton#spacer_btn {{
+    background: transparent;
+    border: none;
+}}
+
+QToolButton#theme_btn {{
+    background: transparent;
+    border: 1px solid {BD};
+    border-radius: 8px;
+    padding: 4px 10px;
+    color: {TX};
+    font-size: 12pt;
+}}
+
+QToolButton#theme_btn:hover {{
+    background: {p['HOVER_BG']};
+    border-color: {A};
+    color: {A};
 }}
 
 QToolBar::separator {{
