@@ -485,6 +485,12 @@ QRadioButton::indicator:checked {{
 }}
 
 /* =============================== СЛАЙДЕР =============================== */
+QSlider {{
+    /* вертикальные отступы = половине высоты ручки, чтобы ручка целиком
+       влезала в виджет (иначе её «съедают» соседние подписи) */
+    padding: 8px 0px;
+}}
+
 QSlider::groove:horizontal {{
     height: 6px;
     background: {p['GROOVE']};
@@ -493,6 +499,11 @@ QSlider::groove:horizontal {{
 
 QSlider::sub-page:horizontal {{
     background: {A};
+    border-radius: 3px;
+}}
+
+QSlider::add-page:horizontal {{
+    background: {p['GROOVE']};
     border-radius: 3px;
 }}
 
