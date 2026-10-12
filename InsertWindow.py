@@ -1216,7 +1216,8 @@ class ChangeWindow(UpdateWindow):
                 self.doc_table.setItem(idx, 3, QtWidgets.QTableWidgetItem(line[3]))
                 self.doc_table.setItem(idx, 4, QtWidgets.QTableWidgetItem(line[4]))
                 self.doc_table.setItem(idx, 5, QtWidgets.QTableWidgetItem(line[5]))
-                self.doc_table.setItem(idx, 6, QtWidgets.QTableWidgetItem(line[6].strftime(self.date_format)))
+                _dd = line[6].strftime(self.date_format) if hasattr(line[6], 'strftime') else (str(line[6]) if line[6] else '')
+                self.doc_table.setItem(idx, 6, QtWidgets.QTableWidgetItem(_dd))
                 self.doc_table.id_list.append(line[-1])
 
         query = """
@@ -1241,7 +1242,8 @@ class ChangeWindow(UpdateWindow):
                 self.family_table.setItem(idx, 1, QtWidgets.QTableWidgetItem(line[1]))
                 self.family_table.setItem(idx, 2, QtWidgets.QTableWidgetItem(line[2]))
                 self.family_table.setItem(idx, 3, QtWidgets.QTableWidgetItem(line[3]))
-                self.family_table.setItem(idx, 4, QtWidgets.QTableWidgetItem(line[4].strftime(self.date_format)))
+                _fb = line[4].strftime(self.date_format) if hasattr(line[4], 'strftime') else (str(line[4]) if line[4] else '')
+                self.family_table.setItem(idx, 4, QtWidgets.QTableWidgetItem(_fb))
                 self.family_table.id_list.append(line[-1])
 
         query = '''
@@ -1493,10 +1495,12 @@ class Table(QtWidgets.QTableWidget):
 
         self.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
 
-        self.conf_dir = os.path.join(os.environ.get('APPDATA'), 'HRaccounting')
+        # кроссплатформенный каталог конфигурации (Windows: %APPDATA%, иначе ~/.config)
+        conf_root = os.environ.get('APPDATA') or os.path.expanduser('~/.config')
+        self.conf_dir = os.path.join(conf_root, 'HRaccounting')
 
         if not os.path.exists(self.conf_dir):
-            os.mkdir(self.conf_dir)
+            os.makedirs(self.conf_dir, exist_ok=True)
 
         self.horizontalHeader().sectionResized.connect(self.save_state)
 

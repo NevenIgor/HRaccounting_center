@@ -48,9 +48,9 @@ class MainTab(QtWidgets.QTabWidget):
             main_layout.addWidget(logo_w)
             logo_label = QtWidgets.QLabel(
                 '<div align="center">'
-                '<span style="font-size:26pt;font-weight:700;color:{};">'
+                '<span style="font-size:30pt;font-weight:700;color:{};">'
                 'СПО учета личного состава</span><br>'
-                '<span style="font-size:13pt;color:{};">'
+                '<span style="font-size:16pt;color:{};">'
                 'Выберите сотрудника из списка слева или добавьте новый профиль'
                 '</span></div>'.format(style.ACCENT, style.MUTED))
             logo_label.setStyleSheet('background: transparent; border: none;')
@@ -67,8 +67,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.db = DB(db)
 
         self.tool_bar = QtWidgets.QToolBar()
-        self.tool_bar.setOrientation(QtCore.Qt.Vertical)
-        self.tool_bar.setIconSize(QtCore.QSize(42, 42))
+        # тулбар — горизонтальный, сверху окна (привычнее и компактнее по высоте)
+        self.tool_bar.setOrientation(QtCore.Qt.Horizontal)
+        self.tool_bar.setIconSize(QtCore.QSize(32, 32))
         self.tool_bar.setToolButtonStyle(QtCore.Qt.ToolButtonTextUnderIcon)
         self.tool_bar.setMovable(False)
         self.tool_bar.setFloatable(False)
@@ -148,7 +149,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         search_header = QtWidgets.QLabel('Поиск сотрудников')
         search_header.setStyleSheet(
-            'font-size: 14pt; font-weight: 700; color: {};'.format(style.ACCENT))
+            'font-size: 16pt; font-weight: 700; color: {};'.format(style.ACCENT))
         self.search_area.addWidget(search_header)
 
         search_spec = QtWidgets.QGroupBox('Параметры поиска')
@@ -224,7 +225,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.statusbar = QtWidgets.QStatusBar()
 
         self.setCentralWidget(self.central_widget)
-        self.addToolBar(QtCore.Qt.LeftToolBarArea, self.tool_bar)
+        # тулбар сверху окна (привычнее, чем боковой)
+        self.addToolBar(QtCore.Qt.TopToolBarArea, self.tool_bar)
         self.setStatusBar(self.statusbar)
         self.statusbar.showMessage('Готово')
         
