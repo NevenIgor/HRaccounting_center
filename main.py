@@ -98,8 +98,36 @@ class MainWindow(QtWidgets.QMainWindow):
         docs_menu = QtWidgets.QAction(QtGui.QIcon('./data/data.png'), 'Формы\nдокументов', self)
         docs_menu.triggered.connect(self.create_documents)
 
+        # --- кнопка переключения чёрной темы (добавляется в конец тулбара) ---
+
+        def _theme_icon(dark):
+            """Рисунок «полусфера день/ночь» — не зависит от внешних файлов."""
+            pm = QtGui.QPixmap(24, 24)
+            pm.fill(QtCore.Qt.transparent)
+            p = QtGui.QPainter(pm)
+            p.setRenderHint(QtGui.QPainter.Antialiasing)
+            pen = QtGui.QPen(QtGui.QColor('#f0b429' if dark else '#5b6b7f'))
+            pen.setWidth(2)
+            p.setPen(pen)
+            p.setBrush(QtCore.Qt.NoBrush)
+            p.drawEllipse(3, 3, 18, 18)
+            path = QtGui.QPainterPath()
+            path.moveTo(12, 3)
+            path.arcTo(QtGui.QRectF(3, 3, 18, 18), 90, -180)
+            path.closeSubpath()
+            p.setBrush(QtGui.QColor('#f0b429' if dark else '#5b6b7f'))
+            p.drawPath(path)
+            p.end()
+            return QtGui.QIcon(pm)
+
+        self._dark_on = False
+        self.theme_action = QtWidgets.QAction(_theme_icon(False), 'Чёрная тема', self)
+        self.theme_action.setToolTip('Включить/выключить чёрную тему СПО')
+        self.theme_action.triggered.connect(self.toggle_dark_theme)
+
         self.tool_bar.addAction(insert_profile)
         self.tool_bar.addAction(update_profile)
+        self.tool_bar.addSeparator()
         self.tool_bar.addAction(add_scan)
         self.tool_bar.addAction(delete_profile)
         self.tool_bar.addSeparator()
@@ -110,7 +138,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tool_bar.addAction(fizo_menu)
         self.tool_bar.addSeparator()
         self.tool_bar.addAction(im_export_menu)
-        
+        self.tool_bar.addSeparator()
+
+        # кнопка темы — в конце горизонтального тулбара, текст сбоку от иконки
+        theme_btn = self.tool_bar.addWidget(self.theme_action)
+        theme_btn.setObjectName('theme_btn')
+        theme_btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+
         self.tool_bar.setMovable(False)
         self.tool_bar.setToolButtonStyle(QtCore.Qt.ToolButtonTextUnderIcon)
         self.tool_bar.setIconSize(QtCore.QSize(42, 42))
@@ -235,6 +269,48 @@ class MainWindow(QtWidgets.QMainWindow):
         
         self.h_slider.setValue(1)
         
+    def toggle_dark_theme(self):
+        """Включает/выключает чёрную тему СПО (кнопка на тулбаре)."""
+        self._dark_on = not self._dark_on
+        style.set_dark_mode(self._dark_on)
+        app = QtWidgets.QApplication.instance()
+        style.apply_theme(app)
+
+        # перекрасить статичные элементы, чей цвет был зашит при создании
+        self.search_area.itemAt(0).widget().setStyleSheet(
+            'font-size: 16pt; font-weight: 700; color: {};'.format(style.ACCENT))
+        for lbl in self.findChildren(QtWidgets.QLabel):
+            if lbl.text() == 'ГП ВС РФ' or lbl.text() == 'Военносл.':
+                lbl.setStyleSheet('color: {};'.format(style.MUTED))
+        # карточка сотрудника/приветственный экран пересоздаются — подхватят новую палитру
+        if self.list.currentItem():
+            self.chose_person(self.list_items[self.list.currentItem().text()])
+        elif self.splitter.widget(1) is not None:
+            self.splitter.replaceWidget(1, MainTab(None, parent=self))
+
+        # иконка и подпись кнопки отражают текущее состояние
+        pm = QtGui.QPixmap(24, 24)
+        pm.fill(QtCore.Qt.transparent)
+        p = QtGui.QPainter(pm)
+        p.setRenderHint(QtGui.QPainter.Antialiasing)
+        col = '#f0b429' if self._dark_on else '#5b6b7f'
+        pen = QtGui.QPen(QtGui.QColor(col))
+        pen.setWidth(2)
+        p.setPen(pen)
+        p.setBrush(QtCore.Qt.NoBrush)
+        p.drawEllipse(3, 3, 18, 18)
+        path = QtGui.QPainterPath()
+        path.moveTo(12, 3)
+        path.arcTo(QtGui.QRectF(3, 3, 18, 18), 90, -180)
+        path.closeSubpath()
+        p.setBrush(QtGui.QColor(col))
+        p.drawPath(path)
+        p.end()
+        self.theme_action.setIcon(QtGui.QIcon(pm))
+        self.theme_action.setText('Светлая тема' if self._dark_on else 'Чёрная тема')
+        self.statusbar.showMessage(
+            'Чёрная тема включена' if self._dark_on else 'Светлая тема включена', 3000)
+
     def search_spec_changed(self):
         self.search_spec_query = ''
         if self.h_slider.value() == 1:

@@ -5,6 +5,7 @@ import threading
 
 from Scan_window import ScanWindow
 from db_API import Database as DB
+import style
 
 
 class PersonWidget(QtWidgets.QScrollArea):
@@ -20,7 +21,7 @@ class PersonWidget(QtWidgets.QScrollArea):
         main_layout.setContentsMargins(18, 18, 18, 18)
 
         # фон карточек (QGroupBox) задан темой; сам скролл — прозрачный
-        self.setStyleSheet('QScrollArea { border: none; background: #eef2f7; }')
+        self.setStyleSheet('QScrollArea { border: none; background: transparent; }')
 
         if main_data:
 
@@ -62,6 +63,8 @@ class PersonWidget(QtWidgets.QScrollArea):
             data['snils'] = main_data[27] or ''
             data['inn'] = main_data[28] or ''
             data['fizo_num'] = main_data[29] or ''
+            # вид финансового обеспечения (get_data возвращает financing_name последней колонкой)
+            data['financing'] = (main_data[-1] if len(main_data) > 30 else '') or ''
 
             blob = main_data[25]
             
@@ -113,7 +116,8 @@ class PersonWidget(QtWidgets.QScrollArea):
 
             self.img_label = QtWidgets.QLabel('')
             self.img_label.setStyleSheet(
-                'border: 1px solid #d5dde8; border-radius: 10px; background: #ffffff;')
+                'border: 1px solid {}; border-radius: 10px; background: {};'.format(
+                    style.BORDER, style.SURFACE))
             # self.img_label.setScaledContents(True)
             pixmap = QtGui.QPixmap()
             if blob:
@@ -244,6 +248,10 @@ class PersonWidget(QtWidgets.QScrollArea):
             form.addRow('Подразделение: ', self.labels['passage']['division'])
             form.addRow('Должность: ', self.labels['passage']['position'])
             form.addRow('Приказ о назначении: ', self.labels['passage']['order'])
+
+            # вид финансового обеспечения (из словаря)
+            self.labels['passage']['financing'] = QtWidgets.QLabel(data.get('financing', '') or '—')
+            form.addRow('Финансовое обеспечение: ', self.labels['passage']['financing'])
             passage_gr.setLayout(form)
             
             self.labels['class'] = dict()
@@ -279,7 +287,7 @@ class PersonWidget(QtWidgets.QScrollArea):
                         h['level'], h['order_by'], h['order_date'],
                         h['vus'] or '—', h['actual_from'], h['actual_to']))
                     item = QtWidgets.QLabel(txt)
-                    item.setStyleSheet('color: #6b7a90;')
+                    item.setStyleSheet('color: {};'.format(style.MUTED))
                     form.addRow('', item)
             class_gr.setLayout(form)
             
