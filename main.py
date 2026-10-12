@@ -210,19 +210,48 @@ class MainWindow(QtWidgets.QMainWindow):
         chose_box = QtWidgets.QHBoxLayout()
         chose_box.setContentsMargins(4, 2, 4, 2)
         chose_box.setSpacing(10)
-        gp_label = QtWidgets.QLabel('ГП ВС РФ')
-        gp_label.setStyleSheet('color: {};'.format(style.MUTED))
-        mil_label = QtWidgets.QLabel('Военносл.')
-        mil_label.setStyleSheet('color: {};'.format(style.MUTED))
+        chose_box.setAlignment(QtCore.Qt.AlignVCenter)
+
+        # переключатель «Военнослужащий / ГП»: кликабельные подписи-переключатели.
+        # Сам QSlider оставлен как «двигатель» фильтра (скрыт), потому что раньше
+        # он целиком не влезал между подписями и был некликабельным.
+        self.mil_toggle = QtWidgets.QRadioButton('Военносл.')
+        self.gp_toggle = QtWidgets.QRadioButton('ГП ВС РФ')
+        self.mil_toggle.setObjectName('SpecToggle')
+        self.gp_toggle.setObjectName('SpecToggle')
+        # можно включить/выключить оба — тогда фильтр не ограничивает тип
+        self.mil_toggle.setAutoExclusive(False)
+        self.gp_toggle.setAutoExclusive(False)
+        self.mil_toggle.setChecked(True)
+
+        def make_spec_handler(slider):
+            """Обработчик: синхронизирует скрытый QSlider с переключателями."""
+            def _handler():
+                if self.mil_toggle.isChecked() and self.gp_toggle.isChecked():
+                    # одновременно два режима — оставляем военнослужащих
+                    self.gp_toggle.setChecked(False)
+                    return
+                if self.mil_toggle.isChecked():
+                    slider.setValue(1)
+                elif self.gp_toggle.isChecked():
+                    slider.setValue(0)
+                else:
+                    slider.setValue(-1)   # ни один режим — фильтр сбрасывается
+                self.search_spec_changed()
+            return _handler
+
+        handler = make_spec_handler(self.h_slider)
+        self.mil_toggle.toggled.connect(handler)
+        self.gp_toggle.toggled.connect(handler)
+
         self.h_slider.setMinimumWidth(130)
-        # фиксированная высота по размеру ползунка + ручки — иначе его «съедают» соседи
         self.h_slider.setMinimumHeight(28)
         self.h_slider.setMaximumHeight(28)
-        gp_label.setMinimumHeight(28)
-        mil_label.setMinimumHeight(28)
-        chose_box.addWidget(gp_label)
+        self.h_slider.setVisible(False)
+
+        chose_box.addWidget(self.gp_toggle)
         chose_box.addWidget(self.h_slider, 1)
-        chose_box.addWidget(mil_label)
+        chose_box.addWidget(self.mil_toggle)
         
         h_box = QtWidgets.QHBoxLayout()
         h_box.addWidget(self.current_check)
@@ -283,8 +312,11 @@ class MainWindow(QtWidgets.QMainWindow):
         
         self.search_spec_query = ''
         self.search_spec_changed()
-        
+
         self.h_slider.setValue(1)
+        # синхронизируем переключатели с начальным положением ползунка
+        self.mil_toggle.setChecked(self.h_slider.value() == 1)
+        self.gp_toggle.setChecked(self.h_slider.value() == 0)
         
     def toggle_dark_theme(self):
         """Включает/выключает чёрную тему СПО (кнопка на тулбаре)."""
@@ -296,9 +328,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # перекрасить статичные элементы, чей цвет был зашит при создании
         self.search_area.itemAt(0).widget().setStyleSheet(
             'font-size: 16pt; font-weight: 700; color: {};'.format(style.ACCENT))
-        for lbl in self.findChildren(QtWidgets.QLabel):
-            if lbl.text() == 'ГП ВС РФ' or lbl.text() == 'Военносл.':
-                lbl.setStyleSheet('color: {};'.format(style.MUTED))
         # карточка сотрудника/приветственный экран пересоздаются — подхватят новую палитру
         if self.list.currentItem():
             self.chose_person(self.list_items[self.list.currentItem().text()])
@@ -332,8 +361,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.search_spec_query = ''
         if self.h_slider.value() == 1:
             self.search_spec_query += "AND persons.mil = 'True' "
-        else:
+        elif self.h_slider.value() == 0:
             self.search_spec_query += "AND persons.mil = 'False' "
+        # value == -1 (ни один переключатель не выбран) — не фильтруем по типу
         if self.current_check.isChecked() and not self.archive_check.isChecked():
             self.search_spec_query += "AND persons.active = 'True' "
         elif not self.current_check.isChecked() and self.archive_check.isChecked():

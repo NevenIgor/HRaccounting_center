@@ -198,6 +198,9 @@ class PersonWidget(QtWidgets.QScrollArea):
             self.labels['person2']['snils'] = QtWidgets.QLabel(data['snils'])
             self.labels['person2']['inn'] = QtWidgets.QLabel(data['inn'])
             self.labels['person2']['fizo_num'] = QtWidgets.QLabel(data['fizo_num'])
+            # вид финансового обеспечения (из словаря) — показываем
+            # в первой вкладке «Персональные данные»
+            self.labels['person2']['financing'] = QtWidgets.QLabel(data.get('financing', '') or '—')
 
             form = QtWidgets.QFormLayout()
             if mil:
@@ -213,6 +216,7 @@ class PersonWidget(QtWidgets.QScrollArea):
             form.addRow('СНИЛС:', self.labels['person2']['snils'])
             form.addRow('ИНН:', self.labels['person2']['inn'])
             form.addRow('Номерок сдачи ФП:', self.labels['person2']['fizo_num'])
+            form.addRow('Финансовое обеспечение:', self.labels['person2']['financing'])
 
             first_level.addSpacing(30)
             first_level.addWidget(self.img_label)
@@ -248,10 +252,6 @@ class PersonWidget(QtWidgets.QScrollArea):
             form.addRow('Подразделение: ', self.labels['passage']['division'])
             form.addRow('Должность: ', self.labels['passage']['position'])
             form.addRow('Приказ о назначении: ', self.labels['passage']['order'])
-
-            # вид финансового обеспечения (из словаря)
-            self.labels['passage']['financing'] = QtWidgets.QLabel(data.get('financing', '') or '—')
-            form.addRow('Финансовое обеспечение: ', self.labels['passage']['financing'])
             passage_gr.setLayout(form)
             
             self.labels['class'] = dict()
