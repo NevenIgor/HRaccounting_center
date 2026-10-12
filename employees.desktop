@@ -1,0 +1,14 @@
+[Desktop Entry]
+Name=employees
+Name[ru]=Кадры
+Comment[ru]=СПО учета личного состава (ОКР «Интегратор-3»)
+Type=Application
+NoDisplay=false
+Exec=python3 /opt/HRaccounting/main.py
+Icon=/usr/share/pixmaps/logo.png
+Hidden=false
+Path=/opt/HRaccounting
+Terminal=False
+StartupNotify=false
+Categories=i3;Application;Office;
+
