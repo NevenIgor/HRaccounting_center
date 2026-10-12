@@ -213,18 +213,21 @@ QScrollArea > QWidget > QWidget {{
                 stop:0 {p['PANE_BG']}, stop:1 {BGG});
 }}
 
+/* QSS НЕ умеет box-sizing: padding добавляется к ширине текста, а не
+   «съедается» из неё. Поэтому здесь умеренные отступы + фиксированная
+   минимальная ширина в code (main.py): текст («Документы», «Члены семьи»,
+   «Военнослужащий — ГП») гарантированно помещается целиком и не обрезается
+   до «кумен». Жирный шрифт выбранной вкладки учитывается с запасом. */
 QTabBar::tab {{
     background: {p['TAB_BG']};
     color: {MU};
-    /* увеличенные отступы: при активации вкладка перестаёт «расти» из-за
-       жирного шрифта — под текст с запасом (в т.ч. «Классная квалификация») */
-    padding: 14px 36px;
+    padding: 10px 14px;
     margin-right: 4px;
     border: 1px solid {BD};
     border-bottom: none;
     border-top-left-radius: 9px;
     border-top-right-radius: 9px;
-    font-size: 14pt;
+    font-size: 12pt;
 }}
 
 QTabBar::tab:hover {{
@@ -236,8 +239,10 @@ QTabBar::tab:selected {{
     background: {SF};
     color: {A};
     font-weight: 700;
-    /* тот же размер, что у обычной вкладки: ширина не «прыгает» при выборе */
-    padding: 14px 36px;
+    /* те же отступы/шрифт, что у обычной вкладки: ширина не «прыгает»
+       при выборе, текст не вылезает за границы */
+    padding: 10px 14px;
+    font-size: 12pt;
     border: 1px solid {BD};
     border-bottom: 2px solid {A};
 }}
