@@ -30,6 +30,15 @@ class Database(object):
         except Exception as e:
             return e'''
 
+    def last_insert_id(self, table, pid=None):
+        """ID последней вставленной записи (executescript не обновляет lastrowid)."""
+        if pid is not None:
+            q = 'SELECT MAX("ID") FROM {} WHERE PID = {}'.format(table, pid)
+        else:
+            q = 'SELECT MAX("ID") FROM {}'.format(table)
+        res = self.select(q)
+        return res[0][0] if res and res[0][0] is not None else None
+
     def execute_n(self, query, args):
         res = self.cursor.execute(query, args)
         self.connection.commit()
