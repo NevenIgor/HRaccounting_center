@@ -37,6 +37,8 @@ LIGHT = dict(
     HEAD_BOTTOM='#e9eff6',
     HANDLE='#c3cedb',
     GROOVE='#dbe4ee',
+    TAB_BG='#dfe7f1',           # неактивные вкладки (светлая)
+    PANE_BG='#ffffff',          # подложка области вкладок (светлая)
 )
 
 DARK = dict(
@@ -68,8 +70,14 @@ DARK = dict(
     HEAD_BOTTOM='#171b21',
     HANDLE='#3a434f',
     GROOVE='#2a303a',
+    TAB_BG='#12151a',           # неактивные вкладки (тёмная)
+    PANE_BG='#12151a',          # подложка области вкладок — тёмная, не режет глаза
 )
 DARK['ACCENT_LIGHT'] = '#16324f'   # подсветка выбранных элементов (тёмно-синяя)
+# значения по умолчанию для палитр, если ключ не задан
+for _pal in (LIGHT, DARK):
+    _pal.setdefault('TAB_BG', _pal.get('BG'))
+    _pal.setdefault('PANE_BG', _pal.get('SURFACE'))
 
 # Активная палитра (по умолчанию — светлая); переключается set_dark_mode()
 P = dict(LIGHT)
@@ -189,18 +197,28 @@ QToolButton:pressed {{
 
 /* =============================== ВКЛАДКИ =============================== */
 QTabWidget::pane {{
-    background: {SF};
+    background: {p['PANE_BG']};
     border: 1px solid {BD};
     border-radius: 12px;
     top: -1px;
 }}
 
+/* содержимое вкладки (карточки сотрудников и т.п.) — всегда в цвете темы */
+QTabWidget > QWidget, QStackedWidget, QScrollArea {{
+    background: {p['PANE_BG']};
+}}
+
+QScrollArea > QWidget > QWidget {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 {p['PANE_BG']}, stop:1 {BGG});
+}}
+
 QTabBar::tab {{
-    background: transparent;
+    background: {p['TAB_BG']};
     color: {MU};
     padding: 11px 26px;
     margin-right: 4px;
-    border: 1px solid transparent;
+    border: 1px solid {BD};
     border-bottom: none;
     border-top-left-radius: 9px;
     border-top-right-radius: 9px;

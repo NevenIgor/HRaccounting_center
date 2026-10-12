@@ -95,6 +95,11 @@ class MainWindow(QtWidgets.QMainWindow):
         im_export_menu = QtWidgets.QAction(QtGui.QIcon('./data/export.png'), 'Экспорт', self)
         im_export_menu.triggered.connect(self.export)
 
+        import_menu = QtWidgets.QAction(QtGui.QIcon('./data/folder.png'), 'Импорт\nданных', self)
+        import_menu.setToolTip('Перенести данные из базы (.db) старой версии. '
+                               'Текущая база будет очищена (перед этим создан бекап).')
+        import_menu.triggered.connect(self.import_db)
+
         docs_menu = QtWidgets.QAction(QtGui.QIcon('./data/data.png'), 'Формы\nдокументов', self)
         docs_menu.triggered.connect(self.create_documents)
 
@@ -138,6 +143,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tool_bar.addAction(fizo_menu)
         self.tool_bar.addSeparator()
         self.tool_bar.addAction(im_export_menu)
+        self.tool_bar.addAction(import_menu)
         self.tool_bar.addSeparator()
 
         # кнопка темы — в конце горизонтального тулбара, текст сбоку от иконки
@@ -202,12 +208,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.h_slider.valueChanged.connect(self.search_spec_changed)
         
         chose_box = QtWidgets.QHBoxLayout()
+        chose_box.setContentsMargins(4, 2, 4, 2)
+        chose_box.setSpacing(10)
         gp_label = QtWidgets.QLabel('ГП ВС РФ')
         gp_label.setStyleSheet('color: {};'.format(style.MUTED))
         mil_label = QtWidgets.QLabel('Военносл.')
         mil_label.setStyleSheet('color: {};'.format(style.MUTED))
+        self.h_slider.setMinimumWidth(130)
+        # фиксированная высота по размеру ползунка + ручки — иначе его «съедают» соседи
+        self.h_slider.setMinimumHeight(28)
+        self.h_slider.setMaximumHeight(28)
+        gp_label.setMinimumHeight(28)
+        mil_label.setMinimumHeight(28)
         chose_box.addWidget(gp_label)
-        chose_box.addWidget(self.h_slider)
+        chose_box.addWidget(self.h_slider, 1)
         chose_box.addWidget(mil_label)
         
         h_box = QtWidgets.QHBoxLayout()
@@ -215,6 +229,7 @@ class MainWindow(QtWidgets.QMainWindow):
         h_box.addWidget(self.archive_check)
 
         v_box = QtWidgets.QVBoxLayout()
+        v_box.setSpacing(10)
         v_box.addLayout(chose_box)
         v_box.addLayout(h_box)
 
@@ -414,6 +429,49 @@ class MainWindow(QtWidgets.QMainWindow):
         self.doc_w = DocWindow(self)
         self.doc_w.setWindowTitle('Документы')
         self.doc_w.show()
+
+    def import_db(self):
+        """Импорт данных из базы (.db) старой версии.
+
+        Порядок: подтверждение -> бекап текущей базы (дата_время_backup.db) ->
+        очистка текущей базы -> перенос строк из выбранного файла.
+        """
+        answer = QtWidgets.QMessageBox.question(
+            self, 'Импорт данных',
+            'Импорт данных очистит базу. Вы уверены что хотите продолжить?',
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No)
+        if answer != QtWidgets.QMessageBox.Yes:
+            return
+
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, 'Выберите файл базы данных старой версии', '',
+            'Базы данных (*.db);;Все файлы (*)')
+        if not file_path:
+            return
+
+        backup_path = None
+        try:
+            backup_path = self.db.backup_current_db()
+            self.db.clear_db()
+            imported = self.db.import_from_file(file_path)
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self, 'Ошибка импорта',
+                'Не удалось выполнить импорт: {}\nРезервная копия: {}'.format(
+                    e, backup_path or 'не создан'))
+            return
+
+        total = sum(imported.values())
+        detail = ', '.join('{}: {}'.format(t, c) for t, c in imported.items() if c)
+        QtWidgets.QMessageBox.information(
+            self, 'Импорт завершён',
+            'Перенесено записей: {}.\n({})\n\nРезервная копия сохранена:\n{}'
+            .format(total, detail or 'данных не найдено', backup_path))
+
+        # обновляем интерфейс после импорта
+        self.splitter.replaceWidget(1, MainTab(None, parent=self))
+        self.find()
 
     def export(self):
         f = QtWidgets.QFileDialog.getSaveFileName(self, 'Сохранить как', 'Сотрудники.xlsx')
