@@ -216,13 +216,15 @@ QScrollArea > QWidget > QWidget {{
 QTabBar::tab {{
     background: {p['TAB_BG']};
     color: {MU};
-    padding: 11px 26px;
+    /* увеличенные отступы: при активации вкладка перестаёт «расти» из-за
+       жирного шрифта — под текст с запасом (в т.ч. «Классная квалификация») */
+    padding: 14px 36px;
     margin-right: 4px;
     border: 1px solid {BD};
     border-bottom: none;
     border-top-left-radius: 9px;
     border-top-right-radius: 9px;
-    font-size: 13pt;
+    font-size: 14pt;
 }}
 
 QTabBar::tab:hover {{
@@ -233,7 +235,9 @@ QTabBar::tab:hover {{
 QTabBar::tab:selected {{
     background: {SF};
     color: {A};
-    font-weight: 600;
+    font-weight: 700;
+    /* тот же размер, что у обычной вкладки: ширина не «прыгает» при выборе */
+    padding: 14px 36px;
     border: 1px solid {BD};
     border-bottom: 2px solid {A};
 }}
@@ -486,34 +490,37 @@ QRadioButton::indicator:checked {{
 
 /* =============================== СЛАЙДЕР =============================== */
 QSlider {{
-    /* вертикальные отступы = половине высоты ручки, чтобы ручка целиком
-       влезала в виджет (иначе её «съедают» соседние подписи) */
-    padding: 8px 0px;
+    /* вертикальных отступов нет: вся высота виджета (36px) отдаётся под
+       желобок и ручку — так ползунок не обрезается сверху и снизу и остаётся
+       кликабельным (ручка не залезает под соседние подписи) */
+    padding: 0px;
 }}
 
 QSlider::groove:horizontal {{
-    height: 6px;
+    height: 8px;
     background: {p['GROOVE']};
-    border-radius: 3px;
+    border-radius: 4px;
 }}
 
 QSlider::sub-page:horizontal {{
     background: {A};
-    border-radius: 3px;
+    border-radius: 4px;
 }}
 
 QSlider::add-page:horizontal {{
     background: {p['GROOVE']};
-    border-radius: 3px;
+    border-radius: 4px;
 }}
 
 QSlider::handle:horizontal {{
     background: {SF};
     border: 2px solid {A};
-    width: 16px;
-    height: 16px;
-    margin: -7px 0;
-    border-radius: 9px;
+    width: 20px;
+    height: 20px;
+    /* margin = -(высота ручки - высота желобка)/2 => ручка 28px центрируется
+       по желобку 8px и целиком умещается в виджете */
+    margin: -10px 0;
+    border-radius: 12px;
 }}
 
 QSlider::handle:horizontal:hover {{

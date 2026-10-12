@@ -212,47 +212,54 @@ class MainWindow(QtWidgets.QMainWindow):
         chose_box.setSpacing(10)
         chose_box.setAlignment(QtCore.Qt.AlignVCenter)
 
-        # переключатель «Военнослужащий / ГП»: кликабельные подписи-переключатели.
-        # Сам QSlider оставлен как «двигатель» фильтра (скрыт), потому что раньше
-        # он целиком не влезал между подписями и был некликабельным.
-        self.mil_toggle = QtWidgets.QRadioButton('Военносл.')
-        self.gp_toggle = QtWidgets.QRadioButton('ГП ВС РФ')
-        self.mil_toggle.setObjectName('SpecToggle')
-        self.gp_toggle.setObjectName('SpecToggle')
-        # можно включить/выключить оба — тогда фильтр не ограничивает тип
-        self.mil_toggle.setAutoExclusive(False)
-        self.gp_toggle.setAutoExclusive(False)
-        self.mil_toggle.setChecked(True)
+        # переключатель «Военнослужащий / ГП»: сам ползунок виден и кликабелен.
+        # Раньше он обрезался сверху/снизу (ручка была выше выделенного места)
+        # и перекрывался подписями, из-за чего по нему нельзя было попасть.
+        # Теперь для него зарезервирована собственная строка фиксированной
+        # высоты: ползунок целиком в ней помещается и всегда доступен клику.
+        self.h_slider.setMinimumWidth(140)
+        self.h_slider.setMinimumHeight(36)
+        self.h_slider.setMaximumHeight(36)
+        self.h_slider.setPageStep(1)
+        self.h_slider.setFocusPolicy(QtCore.Qt.NoFocus)
 
-        def make_spec_handler(slider):
-            """Обработчик: синхронизирует скрытый QSlider с переключателями."""
-            def _handler():
-                if self.mil_toggle.isChecked() and self.gp_toggle.isChecked():
-                    # одновременно два режима — оставляем военнослужащих
-                    self.gp_toggle.setChecked(False)
-                    return
-                if self.mil_toggle.isChecked():
-                    slider.setValue(1)
-                elif self.gp_toggle.isChecked():
-                    slider.setValue(0)
-                else:
-                    slider.setValue(-1)   # ни один режим — фильтр сбрасывается
-                self.search_spec_changed()
-            return _handler
+        # подписи по краям ползунка — кликабельны и переключают его
+        self.gp_label = QtWidgets.QLabel('ГП ВС РФ')
+        self.mil_label = QtWidgets.QLabel('Военнослужащий')
+        for lbl in (self.gp_label, self.mil_label):
+            lbl.setCursor(QtCore.Qt.PointingHandCursor)
+            lbl.setStyleSheet('font-size: 11pt;')
+            lbl.setAlignment(QtCore.Qt.AlignVCenter)
 
-        handler = make_spec_handler(self.h_slider)
-        self.mil_toggle.toggled.connect(handler)
-        self.gp_toggle.toggled.connect(handler)
+        self.gp_label.mousePressEvent = lambda ev: self.h_slider.setValue(0)
+        self.mil_label.mousePressEvent = lambda ev: self.h_slider.setValue(1)
 
-        self.h_slider.setMinimumWidth(130)
-        self.h_slider.setMinimumHeight(28)
-        self.h_slider.setMaximumHeight(28)
-        self.h_slider.setVisible(False)
+        # подпись текущего положения посередине строки
+        self.slider_value_label = QtWidgets.QLabel()
+        self.slider_value_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.slider_value_label.setStyleSheet(
+            'font-size: 11pt; font-weight: 600; color: {};'.format(style.ACCENT))
 
-        chose_box.addWidget(self.gp_toggle)
+        def update_slider_caption(value):
+            if value == 1:
+                self.slider_value_label.setText('Военнослужащие')
+            elif value == 0:
+                self.slider_value_label.setText('ГП ВС РФ')
+            else:
+                self.slider_value_label.setText('Все')
+
+        self.h_slider.valueChanged.connect(update_slider_caption)
+        update_slider_caption(self.h_slider.value())
+
+        chose_box.addWidget(self.gp_label)
         chose_box.addWidget(self.h_slider, 1)
-        chose_box.addWidget(self.mil_toggle)
-        
+        chose_box.addWidget(self.mil_label)
+
+        # строка с текущим режимом — отдельной строкой под ползунком,
+        # чтобы ничего не перекрывало сам ползунок
+        slider_caption_box = QtWidgets.QHBoxLayout()
+        slider_caption_box.setContentsMargins(4, 0, 4, 0)
+        slider_caption_box.addWidget(self.slider_value_label)
         h_box = QtWidgets.QHBoxLayout()
         h_box.addWidget(self.current_check)
         h_box.addWidget(self.archive_check)
@@ -260,6 +267,7 @@ class MainWindow(QtWidgets.QMainWindow):
         v_box = QtWidgets.QVBoxLayout()
         v_box.setSpacing(10)
         v_box.addLayout(chose_box)
+        v_box.addLayout(slider_caption_box)
         v_box.addLayout(h_box)
 
         search_spec.setLayout(v_box)
@@ -314,9 +322,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.search_spec_changed()
 
         self.h_slider.setValue(1)
-        # синхронизируем переключатели с начальным положением ползунка
-        self.mil_toggle.setChecked(self.h_slider.value() == 1)
-        self.gp_toggle.setChecked(self.h_slider.value() == 0)
+        update_slider_caption(self.h_slider.value())
         
     def toggle_dark_theme(self):
         """Включает/выключает чёрную тему СПО (кнопка на тулбаре)."""
