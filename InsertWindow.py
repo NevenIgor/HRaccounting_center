@@ -108,11 +108,9 @@ class UpdateWindow(QtWidgets.QMainWindow):
         self.labels['status1'] = QtWidgets.QComboBox()
         self.labels['status1'].addItem('Действующий', True)
         self.labels['status1'].addItem('Резерв', False)
-        self.labels['position'] = QtWidgets.QComboBox()
-        self.labels['division'] = QtWidgets.QComboBox()
-        self.labels['order'] = QtWidgets.QLineEdit()
-        self.labels['order_date'] = QtWidgets.QDateEdit()
-        self.labels['order_date'].setCalendarPopup(True)
+        # подразделение/должность больше не вводятся в персональных данных —
+        # единственным источником этих данных является вкладка
+        # «Прохождение службы» (последняя по дате приказа строка)
         self.labels['allowance'] = QtWidgets.QLineEdit()
         self.labels['allowance_by'] = QtWidgets.QLineEdit()
         self.labels['allowance_date'] = QtWidgets.QDateEdit()
@@ -149,10 +147,8 @@ class UpdateWindow(QtWidgets.QMainWindow):
         form3.addRow('Номер личного дела:', self.labels['buisness'])
         form3.addRow('Звание:', self.labels['rank'])
         form3.addRow('Статус:', self.labels['status1'])
-        form3.addRow('Подразделение:', self.labels['division'])
-        form3.addRow('Должность:', self.labels['position'])
-        form3.addRow('Приказ о назначении:', self.labels['order'])
-        form3.addRow('Дата приказа:', self.labels['order_date'])
+        # подразделение/должность/приказ убраны из персональных данных —
+        # они берутся из вкладки «Прохождение службы»
         form3.addRow('Номер допуска:', self.labels['allowance'])
         form3.addRow('Допуск выдан:', self.labels['allowance_by'])
         form3.addRow('Дата выдачи:', self.labels['allowance_date'])
@@ -165,33 +161,6 @@ class UpdateWindow(QtWidgets.QMainWindow):
         first_level.addLayout(form3)
         first_level.setAlignment(QtCore.Qt.AlignCenter)
         self.person_data.setLayout(first_level)
-        
-        query = """
-        SELECT 
-        positions.name_full
-        FROM 
-        positions
-        ORDER BY
-        positions.name_full ASC;
-        """
-        res = self.db.select(query)
-        if res:
-            for row in res:
-                self.labels['position'].addItem(row[0])
-                
-        query = """
-        SELECT 
-        divisions.name_full
-        FROM 
-        divisions
-        ORDER BY
-        divisions.name_full ASC;
-        """
-        res = self.db.select(query)
-        if res:
-            for row in res:
-                self.labels['division'].addItem(row[0])
-
         
         #======================================== Классность ====================================
         
@@ -609,6 +578,12 @@ class UpdateWindow(QtWidgets.QMainWindow):
 
         self.move(0, 0)
 
+    def get_last_service_row(self):
+        """Последняя по дате приказа строка «Прохождения службы» (ORDER BY DESC)."""
+        if not self.pid:
+            return None
+        return self.db.get_last_service_row(self.pid)
+
     def full_save(self):
         self.add_dolg()
         self.add_lgot()
@@ -702,6 +677,9 @@ class UpdateWindow(QtWidgets.QMainWindow):
                                       self.service_table.item(i, 6).text(),
                                       f_date(self.service_table.item(i, 7).text()),))
 
+        # главная страница: подразделение/должность/приказ — из последней
+        # по дате приказа строки «Прохождения службы»
+        self.sync_service_to_person()
 
 
     def change_dolg(self):
@@ -908,6 +886,12 @@ class UpdateWindow(QtWidgets.QMainWindow):
         self.service_table.setItem(self.service_table.rowCount() - 1, 7, QtWidgets.QTableWidgetItem(self.service_order_date_edit.text()))
 
         self.service_table.id_list.append(self.db.last_insert_id("service_passing", self.pid))
+
+        # сразу обновляем данные главной страницы (последняя строка по дате приказа)
+        self.sync_service_to_person()
+        last = self.get_last_service_row()
+        if last:
+            self.labels['division'].setText(last[0] or '')
     
     def add_fizo(self):
         category = self.fizo_type_edit.currentText()
@@ -1118,6 +1102,9 @@ class UpdateWindow(QtWidgets.QMainWindow):
                     QtWidgets.QMessageBox.critical(self, 'Ошибка!', str(e), defaultButton=QtWidgets.QMessageBox.Ok)
                 table.id_list.pop(row)
                 table.removeRow(row)
+            # после удаления строк службы пересчитываем данные главной страницы
+            if table_name == 'service_passing':
+                self.sync_service_to_person()
 
 
 class InsertWindow(UpdateWindow):
@@ -1152,10 +1139,8 @@ class InsertWindow(UpdateWindow):
             data['mobile_number1'] = self.labels['mobile_number1'].text()
             data['status'] = self.labels['status'].itemData(self.labels['status'].currentIndex())
             data['status1'] = self.labels['status1'].itemData(self.labels['status1'].currentIndex())
-            data['position'] = self.labels['position'].currentText()
-            data['division'] = self.labels['division'].currentText()
-            data['order'] = self.labels['order'].text()
-            data['order_date'] = self.labels['order_date'].dateTime().toPyDateTime().date()
+            # подразделение/должность/приказ больше не вводятся на этой вкладке —
+            # они заполняются из последней строки «Прохождения службы»
             data['allowance'] = self.labels['allowance'].text()
             data['allowance_by'] = self.labels['allowance_by'].text()
             data['allowance_date'] = self.labels['allowance_date'].dateTime().toPyDateTime().date()
@@ -1171,12 +1156,12 @@ class InsertWindow(UpdateWindow):
                 lnum, second_name, first_name, patr, place_of_birth, date_of_birth, 
                 gender, nation, phone_num1, phone_num2, active, mil, address_reg, 
                 address_living, allowance_num, allowance_by, allowance_date, 
-                family_status, rank, division, "position", order_by, order_date, person_buisness,
+                family_status, rank, person_buisness,
                 snils, inn, fizo_num, financing)
             VALUES ('{}', '{}', '{}', '{}', '{}', '{}', 
                     '{}', '{}', '{}', '{}', '{}', '{}', '{}', 
                     '{}', '{}', '{}', '{}', 
-                    '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', {});
+                    '{}', '{}', '{}', '{}', '{}', '{}', {});
             ;
             """.format(
                     data['number'],
@@ -1198,10 +1183,6 @@ class InsertWindow(UpdateWindow):
                     data['allowance_date'],
                     data['family_status'],
                     data['rank'],
-                    data['division'],
-                    data['position'],
-                    data['order'],
-                    data['order_date'],
                     data['buisness'],
                     data['snils'],
                     data['inn'],
@@ -1216,8 +1197,9 @@ class InsertWindow(UpdateWindow):
                 else:
                     self.tab_widget.setTabEnabled(1, True)
                     self.tab_widget.setTabEnabled(2, True)
-                    self.tab_widget.setTabEnabled(7, True)
-                    self.tab_widget.setTabEnabled(8, True)
+                    self.tab_widget.setTabEnabled(3, True)  # Прохождение службы
+                    self.tab_widget.setTabEnabled(8, True)  # Долги
+                    self.tab_widget.setTabEnabled(9, True)  # Авто
                 query = """
                 SELECT 
                 persons."ID"
@@ -1592,10 +1574,8 @@ class ChangeWindow(UpdateWindow):
         data['mobile_number1'] = self.labels['mobile_number1'].text()
         data['status'] = self.labels['status'].itemData(self.labels['status'].currentIndex())
         data['status1'] = self.labels['status1'].itemData(self.labels['status1'].currentIndex())
-        data['position'] = self.labels['position'].currentText()
-        data['division'] = self.labels['division'].currentText()
-        data['order'] = self.labels['order'].text()
-        data['order_date'] = self.labels['order_date'].dateTime().toPyDateTime().date()
+        # подразделение/должность/приказ не редактируются здесь —
+        # они синхронизируются из последней строки «Прохождения службы»
         data['allowance'] = self.labels['allowance'].text()
         data['allowance_by'] = self.labels['allowance_by'].text()
         data['allowance_date'] = self.labels['allowance_date'].dateTime().toPyDateTime().date()
@@ -1628,10 +1608,6 @@ class ChangeWindow(UpdateWindow):
         "allowance_date" = '{}',
         "family_status" = '{}',
         "rank" = '{}',
-        "division" = '{}',
-        "position" = '{}',
-        "order_by" = '{}',
-        "order_date" = '{}',
         "person_buisness" = '{}',
         "snils" = '{}',
         "inn" = '{}',
@@ -1658,10 +1634,6 @@ class ChangeWindow(UpdateWindow):
                 data['allowance_date'],
                 data['family_status'],
                 data['rank'],
-                data['division'],
-                data['position'],
-                data['order'],
-                data['order_date'],
                 data['buisness'],
                 data['snils'],
                 data['inn'],
@@ -1674,6 +1646,11 @@ class ChangeWindow(UpdateWindow):
         except Exception as e:
             self.db.connection.commit()
             self.error(str(e))
+
+        # подразделение/должность/приказ — из последней строки «Прохождения службы»
+        self.sync_service_to_person()
+        last = self.get_last_service_row()
+        self.labels['division'].setText((last[0] or '') if last else '')
         
     def update_data(self):
         self.close()

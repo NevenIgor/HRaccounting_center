@@ -48,6 +48,45 @@ class Database(object):
                 order_date date
             );
         ''')
+        # подразделение/должность/приказ больше не хранятся в persons —
+        # они берутся из последней по дате строки service_passing.
+        # Колонки persons удаляются (миграция существующих баз).
+        pcols = [r[1] for r in self.cursor.execute('PRAGMA table_info(persons)').fetchall()]
+        obsolete = [c for c in ('division', 'position', 'order_by', 'order_date') if c in pcols]
+        if obsolete:
+            pk = [r[1] for r in self.cursor.execute(
+                'PRAGMA table_info(persons)').fetchall() if r[5] > 0]
+            pk_str = ', '.join('"{}"'.format(c) for c in pk) if pk else '"ID"'
+            keep = [c for c in pcols if c not in obsolete]
+            keep_str = ', '.join('"{}"'.format(c) for c in keep)
+            self.cursor.execute('PRAGMA foreign_keys=OFF;')
+            self.cursor.execute('ALTER TABLE persons RENAME TO persons_old;')
+            self.cursor.execute(
+                'CREATE TABLE persons AS SELECT {} FROM persons_old WHERE 0;'.format(keep_str))
+            # восстанавливаем автоинкремент первичного ключа
+            try:
+                seq = self.cursor.execute(
+                    "SELECT seq FROM sqlite_sequence WHERE name='persons'").fetchone()
+                if seq is None:
+                    mx = self.cursor.execute(
+                        'SELECT MAX("ID") FROM persons_old').fetchone()[0] or 0
+                    self.cursor.execute(
+                        'INSERT INTO sqlite_sequence(name, seq) VALUES (?, ?)',
+                        ('persons', mx))
+                else:
+                    self.cursor.execute('DELETE FROM sqlite_sequence WHERE name=?;', ('persons',))
+                    self.cursor.execute(
+                        'INSERT INTO sqlite_sequence(name, seq) VALUES (?, ?)',
+                        ('persons', seq[0]))
+            except Exception:
+                pass
+            self.cursor.execute(
+                'INSERT INTO persons ({}) SELECT {} FROM persons_old;'.format(keep_str, keep_str))
+            self.cursor.execute('DROP TABLE persons_old;')
+            self.cursor.execute(
+                'CREATE INDEX IF NOT EXISTS idx_service_passing_pid '
+                'ON service_passing ("PID", order_date);')
+            self.cursor.execute('PRAGMA foreign_keys=ON;')
         self.connection.commit()
 
     def select(self, query):
@@ -174,16 +213,45 @@ class Database(object):
         return imported
 
     def get_data(self, person_ID):
+        # подразделение/должность/приказ берутся из последней по дате приказа
+        # строки таблицы «Прохождение службы» (service_passing)
         data = self.select("""
-            SELECT 
+            SELECT
                 p.*,
-                (SELECT name FROM financing WHERE financing."ID" = p.financing) AS financing_name
-            FROM 
+                (SELECT name FROM financing WHERE financing."ID" = p.financing) AS financing_name,
+                sp.division,
+                sp.position,
+                sp.order_by,
+                sp.order_date
+            FROM
                 persons p
-            WHERE 
+            LEFT JOIN (
+                SELECT s."PID", s.division, s.position, s.order_by, s.order_date
+                FROM service_passing s
+                WHERE s."ID" = (
+                    SELECT s2."ID" FROM service_passing s2
+                    WHERE s2."PID" = s."PID"
+                    ORDER BY COALESCE(s2.order_date, '1900-01-01') DESC, s2."ID" DESC
+                    LIMIT 1
+                )
+            ) sp ON sp."PID" = p."ID"
+            WHERE
                 p."ID" = '{}';
             """.format(person_ID))
-        return data    
+        return data
+
+    def get_last_service_row(self, person_ID):
+        """Последняя по дате приказа строка «Прохождения службы»:
+        (division, position, order_by, order_date) или None."""
+        res = self.select('''
+            SELECT division, position, order_by, order_date
+            FROM service_passing
+            WHERE service_passing."PID" = {}
+            ORDER BY COALESCE(service_passing.order_date, '1900-01-01') DESC,
+                     service_passing."ID" DESC
+            LIMIT 1;
+        '''.format(int(person_ID)))
+        return res[0] if res else None    
     
         
 class DB(object):
