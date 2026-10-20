@@ -154,8 +154,36 @@ class Database(object):
         self.connection.commit()
 
     def select(self, query):
-        res = self.cursor.execute(query)
-        data = self.cursor.fetchall()
+        # PARSE_DECLTYPES в __init__ пытается автоматически конвертировать
+        # значения колонок с объявленным типом DATE/TIMESTAMP и падает с
+        # ValueError, если в такой колонке лежит не-дата (например 'TEST').
+        # На время запроса подменяем конвертеры безопасными: они возвращают
+        # datetime при успешном разборе, иначе исходное значение; вызывающий
+        # код приводит даты через parse_date().
+        def safe_convert(val):
+            if isinstance(val, bytes):
+                val = val.decode('utf-8', 'ignore')
+            s = str(val).strip()
+            for fmt in ('%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M:%S.%f'):
+                try:
+                    return datetime.datetime.strptime(s, fmt)
+                except ValueError:
+                    continue
+            return val
+
+        prev = {}
+        for name in ('DATE', 'TIMESTAMP', 'datetime', 'date'):
+            prev[name] = sqlite3.converters.get(name)
+            sqlite3.register_converter(name, safe_convert)
+        try:
+            self.cursor.execute(query)
+            data = self.cursor.fetchall()
+        finally:
+            for name, val in prev.items():
+                if val is not None:
+                    sqlite3.converters[name] = val
+                else:
+                    sqlite3.converters.pop(name, None)
         return data
 
     @staticmethod
@@ -189,14 +217,12 @@ class Database(object):
 
     
     def execute(self, query):
-        res = self.cursor.executescript(query)
+        # sqlite3 в новых версиях Python отказывается выполнять несколько
+        # операторов одной строкой через cursor.execute(). Разбиваем запрос по
+        # точкам с запятой и выполняем каждый оператор отдельно.
+        for stmt in filter(None, (s.strip() for s in query.split(';'))):
+            self.cursor.execute(stmt)
         self.connection.commit()
-        '''try:
-            res = self.cursor.execute(query)
-            self.connection.commit()
-            return
-        except Exception as e:
-            return e'''
 
     def last_insert_id(self, table, pid=None):
         """ID последней вставленной записи (executescript не обновляет lastrowid)."""
@@ -208,7 +234,21 @@ class Database(object):
         return res[0][0] if res and res[0][0] is not None else None
 
     def execute_n(self, query, args):
-        res = self.cursor.execute(query, args)
+        # Параметрический запрос может содержать несколько операторов
+        # (например DELETE + INSERT) — выполняем каждый отдельно со своими
+        # параметрами там, где они нужны.
+        if ';' in query.rstrip().rstrip(';'):
+            parts = [s.strip() for s in query.split(';') if s.strip()]
+            for part in parts:
+                n = part.count('?')
+                if n == len(args):
+                    self.cursor.execute(part, args)
+                elif n:
+                    self.cursor.execute(part, args[:n])
+                else:
+                    self.cursor.execute(part)
+        else:
+            self.cursor.execute(query, args)
         self.connection.commit()
 
 
@@ -418,17 +458,20 @@ class Database(object):
         return (to_bool(r[0]), to_bool(r[1]), r[2], r[3])
 
     def save_nis(self, person_ID, is_user, finished, number, date_joining):
-        """Сохраняет НИС сотрудника одной актуальной строкой (INSERT OR REPLACE
-        по PID), исключая накопление дублей и рассинхрон 'Да'/'Нет'."""
-        self.execute_n('''
-            DELETE FROM ipoteka WHERE ipoteka."PID" = ?;
+        """Сохраняет НИС сотрудника одной актуальной строкой по PID, исключая
+        накопление дублей и рассинхрон 'Да'/'Нет'. DELETE и INSERT выполняются
+        отдельными параметрическими запросами."""
+        self.cursor.execute('DELETE FROM ipoteka WHERE ipoteka."PID" = ?;',
+                            (person_ID,))
+        self.cursor.execute('''
             INSERT INTO ipoteka ("PID", "user", finished, "number", date_joining)
-            VALUES (?, ?, ?, ?, ?);
-        ''', (person_ID, person_ID,
-              1 if is_user else 0,
-              1 if finished else 0,
-              number,
-              date_joining))    
+            VALUES (?, ?, ?, ?, ?);''',
+                            (person_ID,
+                             1 if is_user else 0,
+                             1 if finished else 0,
+                             number,
+                             date_joining))
+        self.connection.commit()
     
         
 class DB(object):
