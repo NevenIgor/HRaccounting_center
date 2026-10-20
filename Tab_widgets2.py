@@ -55,16 +55,29 @@ class PersonWidget(QtWidgets.QScrollArea):
                 if res:
                     data['family_status'] = res[0][0]
             data['rank'] = main_data[20] or ''
-            data['division'] = main_data[21] or ''
-            data['position'] = main_data[22] or ''
-            data['order_by'] = main_data[23]
-            data['order_date'] = main_data[24]
+            # подразделение/должность/приказ — из последней по дате приказа
+            # строки таблицы «Прохождение службы» (get_data подмешивает их
+            # последними колонками: ..., financing_name, division, position,
+            # order_by, order_date)
+            sp_row = self.db.get_last_service_row(main_data[0])
+            if sp_row:
+                data['division'] = sp_row[0] or ''
+                data['position'] = sp_row[1] or ''
+                data['order_by'] = sp_row[2]
+                data['order_date'] = sp_row[3]
+            else:
+                data['division'] = ''
+                data['position'] = ''
+                data['order_by'] = None
+                data['order_date'] = None
             data['person_buisness'] = main_data[26] or ''
             data['snils'] = main_data[27] or ''
             data['inn'] = main_data[28] or ''
             data['fizo_num'] = main_data[29] or ''
-            # вид финансового обеспечения (get_data возвращает financing_name последней колонкой)
-            data['financing'] = (main_data[-1] if len(main_data) > 30 else '') or ''
+            # вид финансового обеспечения (get_data возвращает financing_name
+            # перед колонками service_passing: ..., financing_name, division,
+            # position, order_by, order_date)
+            data['financing'] = (main_data[-5] if len(main_data) > 30 else '') or ''
 
             blob = main_data[25]
             
