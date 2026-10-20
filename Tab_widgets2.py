@@ -636,6 +636,57 @@ class DocsWidget(QtWidgets.QScrollArea):
         self.w.show()
         
         
+class ServiceWidget(QtWidgets.QScrollArea):
+    """Вкладка «Прохождение службы»: таблица записей о прохождении службы."""
+
+    HEADERS = ('Условное наименование', 'Действительное наименование', 'Подразделение',
+               'Должность', 'Тарифный разряд', 'Штатная категория', 'Приказ', 'Дата приказа')
+
+    def __init__(self, parent, ID):
+        super().__init__()
+        widget = QtWidgets.QWidget()
+        main_layout = QtWidgets.QVBoxLayout(widget)
+
+        self.ID = ID
+        self.parent = parent
+
+        self.db = parent.db
+        self.date_format = "%d.%m.%Y"
+
+        self.table = Table(0, 8, 'service_passing_tab')
+        self.table.setHorizontalHeaderLabels(self.HEADERS)
+        main_layout.addWidget(self.table)
+
+        query = """
+        SELECT
+        service_passing.conventional_name,
+        service_passing.actual_name,
+        service_passing.division,
+        service_passing.position,
+        service_passing.tariff_rank,
+        service_passing.staff_category,
+        service_passing.order_by,
+        service_passing.order_date
+        FROM
+        service_passing
+        WHERE
+        service_passing."PID" = '{}'
+        ORDER BY
+        service_passing.order_date ASC;
+        """.format(ID)
+        data = self.db.select(query)
+        if data:
+            for idx, line in enumerate(data):
+                self.table.insertRow(self.table.rowCount())
+                for col in range(7):
+                    self.table.setItem(idx, col, QtWidgets.QTableWidgetItem(str(line[col] or '')))
+                _sd = line[7].strftime(self.date_format) + ' г.' if hasattr(line[7], 'strftime') else (str(line[7]) if line[7] else '')
+                self.table.setItem(idx, 7, QtWidgets.QTableWidgetItem(_sd))
+
+        self.setWidget(widget)
+        self.setWidgetResizable(True)
+
+
 class FamilyWidget(QtWidgets.QScrollArea):
     def __init__(self, parent, ID):
         super().__init__()

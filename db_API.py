@@ -33,6 +33,21 @@ class Database(object):
             for n in ('Федеральный бюджет', 'Внебюджетные средства',
                       'Средства бюджета субъекта РФ'):
                 self.cursor.execute('INSERT INTO financing(name) VALUES (?)', (n,))
+        # прохождение службы (вкладка сотрудника + окно редактирования)
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS service_passing (
+                "ID" INTEGER PRIMARY KEY AUTOINCREMENT,
+                "PID" integer,
+                conventional_name character varying(100),
+                actual_name character varying(200),
+                division character varying(150),
+                position character varying(150),
+                tariff_rank character varying(50),
+                staff_category character varying(50),
+                order_by character varying(50),
+                order_date date
+            );
+        ''')
         self.connection.commit()
 
     def select(self, query):
@@ -69,7 +84,7 @@ class Database(object):
     IMPORT_TABLES = ('persons', 'auto', 'class', 'documents', 'family', 'dolg',
                      'ipoteka', 'scans', 'fizo_act', 'fizo_pass', 'person_lgoty',
                      'divisions', 'positions', 'family_status', 'credit_types',
-                     'lgoty', 'fizo_dates', 'financing')
+                     'lgoty', 'fizo_dates', 'financing', 'service_passing')
 
     @staticmethod
     def make_backup_name():

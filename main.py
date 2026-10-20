@@ -53,12 +53,14 @@ class MainTab(QtWidgets.QTabWidget):
             person_w = Tab_widgets2.PersonWidget(self, data)
             document_w = Tab_widgets2.DocsWidget(self, person_id)
             family_w = Tab_widgets2.FamilyWidget(self, person_id)
+            service_w = Tab_widgets2.ServiceWidget(self, person_id)
             fizo_w = Tab_widgets2.FIZOWidget(self, person_id)
 
 
             self.addTab(person_w, 'Главная')
             self.addTab(document_w, 'Документы')
             self.addTab(family_w, 'Члены семьи')
+            self.addTab(service_w, 'Прохождение службы')
 
             if data[12] == 'True':
                 self.addTab(fizo_w, 'ФИЗО')
