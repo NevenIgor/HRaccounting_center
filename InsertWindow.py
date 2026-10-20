@@ -908,27 +908,25 @@ class UpdateWindow(QtWidgets.QMainWindow):
             self.error(str(e))
 
     def add_nis(self):
+        # одна актуальная строка на сотрудника; флаги пишутся как 0/1 —
+        # иначе UI читал 'True'/1 вразнобой и инвертировал «Да»/«Нет»
+        if not self.pid:
+            return
         if self.nis_user.isChecked():
-            finished = self.nis_finished.itemData(self.nis_finished.currentIndex())
+            finished = bool(self.nis_finished.itemData(
+                self.nis_finished.currentIndex()))
             num = self.nis_number.text()
             date = self.nis_date.dateTime().toPyDateTime().date()
-            query = """
-            INSERT INTO ipoteka (PID, user, finished, number, date_joining)
-            VALUES ('{}', 'True', '{}', '{}', '{}')
-            """.format(self.pid, finished, num, date)
             try:
-                self.db.execute(query)
+                self.db.save_nis(self.pid, True, finished, num, date)
             except Exception as e:
-                self.db.connection.commit()
+                self.db.connection.rollback()
                 self.error(str(e))
         else:
-            query = """
-            DELETE FROM ipoteka WHERE PID = '{}'
-            """.format(self.pid)
             try:
-                self.db.execute(query)
+                self.db.save_nis(self.pid, False, False, '', None)
             except Exception as e:
-                self.db.connection.commit()
+                self.db.connection.rollback()
                 self.error(str(e))
 
     def add_auto(self):
@@ -1244,33 +1242,63 @@ class ChangeWindow(UpdateWindow):
         
         data = dict()
 
-        data['number'] = main_data[1]
-        data['surname'] = main_data[2]
-        data['name'] = main_data[3]
-        data['patr'] = main_data[4]
-        data['place_of_birth'] = main_data[5]
-        data['birthday_date'] = main_data[6]
-        data['gender'] = main_data[7]
-        data['nation'] = main_data[8]
-        data['mobile_number'] = main_data[9]
-        data['mobile_number1'] = main_data[10]
-        data['status1'] = main_data[11]
-        data['status'] = main_data[12]
-        data['reg_addr'] = main_data[13]
-        data['liv_addr'] = main_data[14]
-        data['allowance'] = main_data[15]
-        data['allowance_by'] = main_data[16]
-        data['allowance_date'] = main_data[17]
-        data['family_status'] = main_data[19]
-        data['rank'] = main_data[20]
-        data['division'] = main_data[21]
-        data['position'] = main_data[22]
-        data['order'] = main_data[23]
-        data['order_date'] = main_data[24]
-        data['buisness'] = main_data[26]
-        data['snils'] = main_data[27]
-        data['inn'] = main_data[28]
-        data['fizo_num'] = main_data[29]
+        # get_data возвращает ВСЕ колонки таблицы persons в её текущем составе
+        # (порядок = PRAGMA table_info) + financing_name последней. Значения
+        # берём по ИМЕНАМ колонок: состав базы может отличаться, и обращение
+        # по фиксированным индексам давало IndexError.
+        cols = getattr(self.db, '_persons_cols', None) or []
+        if not cols:
+            try:
+                cols = [r[1] for r in self.db.cursor.execute(
+                    'PRAGMA table_info(persons)').fetchall()]
+            except Exception:
+                cols = []
+
+        def val(name, default=None):
+            try:
+                i = cols.index(name)
+            except ValueError:
+                return default
+            if i < len(main_data) and main_data[i] is not None:
+                return main_data[i]
+            return default
+
+        data['number'] = val('lnum')
+        data['surname'] = val('second_name')
+        data['name'] = val('first_name')
+        data['patr'] = val('patr')
+        data['place_of_birth'] = val('place_of_birth')
+        data['birthday_date'] = val('date_of_birth')
+        data['gender'] = val('gender')
+        data['nation'] = val('nation')
+        data['mobile_number'] = val('phone_num1')
+        data['mobile_number1'] = val('phone_num2')
+        data['status1'] = val('active')
+        data['status'] = val('mil')
+        data['reg_addr'] = val('address_reg')
+        data['liv_addr'] = val('address_living')
+        data['allowance'] = val('allowance_num')
+        data['allowance_by'] = val('allowance_by')
+        data['allowance_date'] = val('allowance_date')
+        data['family_status'] = val('family_status')
+        data['rank'] = val('rank')
+        # подразделение/должность/приказ — из последней по дате приказа
+        # строки «Прохождения службы» (get_last_service_row)
+        sp_row = self.db.get_last_service_row(main_data[0])
+        if sp_row:
+            data['division'] = sp_row[0]
+            data['position'] = sp_row[1]
+            data['order'] = sp_row[2]
+            data['order_date'] = sp_row[3]
+        else:
+            data['division'] = ''
+            data['position'] = ''
+            data['order'] = ''
+            data['order_date'] = None
+        data['buisness'] = val('person_buisness')
+        data['snils'] = val('snils')
+        data['inn'] = val('inn')
+        data['fizo_num'] = val('fizo_num')
         # вид финансового обеспечения (колонка persons.financing)
         data['financing'] = None
         try:
@@ -1283,9 +1311,21 @@ class ChangeWindow(UpdateWindow):
         for i in range(1, len(self.tab_widget)):
             self.tab_widget.setTabEnabled(i, True)
         
-        blob = main_data[25]
+        blob = val('photo')
+        if isinstance(blob, str):
+            try:
+                blob = bytes.fromhex(blob.strip())
+            except ValueError:
+                blob = blob.encode('utf-8', 'ignore')
+        elif isinstance(blob, bytearray):
+            blob = bytes(blob)
+        if not isinstance(blob, bytes):
+            blob = None
         if blob:
-            pixmap.loadFromData(blob)
+            try:
+                pixmap.loadFromData(blob)
+            except TypeError:
+                pass
             pixmap = pixmap.scaled(150, self.img_label.height(), QtCore.Qt.KeepAspectRatio)
             self.img_label.setPixmap(pixmap)
         
@@ -1521,19 +1561,25 @@ class ChangeWindow(UpdateWindow):
                     WHERE 
                     ipoteka."PID" = {};
                     '''.format(self.pid)
-        res = self.db.select(query)
-        if res:
-            if res[-1][0]:
-                self.nis_user.setChecked(True)
-                if res[-1][1] == 'True':
-                    t = 'Да'
+        nis = self.db.get_nis(self.pid)
+        if nis:
+            is_user, finished, num, date_joining = nis
+            self.nis_user.setChecked(is_user)
+            idx = self.nis_finished.findData(finished)
+            if idx >= 0:
+                self.nis_finished.setCurrentIndex(idx)
+            self.nis_number.setText(num or '')
+            if date_joining:
+                if hasattr(date_joining, 'year'):
+                    qd = QtCore.QDate(date_joining.year, date_joining.month,
+                                      date_joining.day)
                 else:
-                    t = 'Нет'
-                self.nis_finished.setCurrentText(res[-1][1])
-                self.nis_number.setText(res[-1][2])
-                self.nis_date.setDate(res[-1][3])
-            else:
-                self.nis_user.setChecked(False)
+                    qd = QtCore.QDate.fromString(str(date_joining),
+                                                 'yyyy-MM-dd')
+                if qd.isValid():
+                    self.nis_date.setDate(qd)
+        else:
+            self.nis_user.setChecked(False)
 
         query = '''
                     SELECT 

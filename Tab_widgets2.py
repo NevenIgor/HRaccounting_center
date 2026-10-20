@@ -25,36 +25,64 @@ class PersonWidget(QtWidgets.QScrollArea):
 
         if main_data:
 
-            if main_data[12] == 'True':
-                mil = True
-            else:
-                mil = False
+            # get_data возвращает ВСЕ колонки таблицы persons в её текущем
+            # составе (порядок = PRAGMA table_info) + financing_name последней.
+            # Индексы вычисляются по ИМЕНАМ колонок, а не хардкодом — база
+            # может иметь отличающийся набор колонок (отсюда IndexError).
+            cols = getattr(self.db, '_persons_cols', None) or []
+            if not cols:
+                try:
+                    cols = [r[1] for r in self.db.cursor.execute(
+                        'PRAGMA table_info(persons)').fetchall()]
+                except Exception:
+                    cols = []
+
+            def val(name, default=None):
+                """Значение колонки persons по имени из кортежа main_data."""
+                try:
+                    i = cols.index(name)
+                except ValueError:
+                    return default
+                if i < len(main_data) and main_data[i] is not None:
+                    return main_data[i]
+                return default
+
+            def to_bool(v):
+                """Любое представление флага ('True'/1/'Да'/bytes) -> bool."""
+                if isinstance(v, (bytes, bytearray)):
+                    v = v.decode('utf-8', 'ignore')
+                if isinstance(v, str):
+                    return v.strip().lower() in ('true', '1', 'да', 'yes', 'y')
+                return bool(v)
+
+            mil = to_bool(val('mil'))
 
             self.date_format = "%d.%m.%Y"
                         
             data = dict()
             
-            data['number'] = main_data[1] or ''
-            data['surname'] = main_data[2] or ''
-            data['name'] = main_data[3] or ''
-            data['patr'] = main_data[4] or ''
-            data['place_of_birth'] = main_data[5] or ''
-            data['birthday'] = main_data[6]
-            data['gender'] = main_data[7] or ''
-            data['nation'] = main_data[8] or ''
-            data['mobile_number'] = main_data[9] or ''
-            data['mobile_number1'] = main_data[10] or ''
-            data['status1'] = main_data[11]
-            data['reg_addr'] = main_data[13] or ''
-            data['liv_addr'] = main_data[14] or ''
-            data['allowance'] = main_data[15] or ''
-            data['allowance_by'] = main_data[16] or ''
-            data['allowance_date'] = main_data[17]
-            if main_data[19] and main_data[19] != 'None':
-                res = self.db.select("""SELECT family_status.name FROM family_status WHERE family_status."ID" = '{}';""".format(int(main_data[19])))
+            data['number'] = val('lnum', '') or ''
+            data['surname'] = val('second_name', '') or ''
+            data['name'] = val('first_name', '') or ''
+            data['patr'] = val('patr', '') or ''
+            data['place_of_birth'] = val('place_of_birth', '') or ''
+            data['birthday'] = val('date_of_birth')
+            data['gender'] = val('gender', '') or ''
+            data['nation'] = val('nation', '') or ''
+            data['mobile_number'] = val('phone_num1', '') or ''
+            data['mobile_number1'] = val('phone_num2', '') or ''
+            data['status1'] = val('active')
+            data['reg_addr'] = val('address_reg', '') or ''
+            data['liv_addr'] = val('address_living', '') or ''
+            data['allowance'] = val('allowance_num', '') or ''
+            data['allowance_by'] = val('allowance_by', '') or ''
+            data['allowance_date'] = val('allowance_date')
+            fam_id = val('family_status')
+            if fam_id and str(fam_id) != 'None':
+                res = self.db.select("""SELECT family_status.name FROM family_status WHERE family_status."ID" = '{}';""".format(int(fam_id)))
                 if res:
                     data['family_status'] = res[0][0]
-            data['rank'] = main_data[20] or ''
+            data['rank'] = val('rank', '') or ''
             # подразделение/должность/приказ — из последней по дате приказа
             # строки таблицы «Прохождение службы» (get_data подмешивает их
             # последними колонками: ..., financing_name, division, position,
@@ -70,18 +98,18 @@ class PersonWidget(QtWidgets.QScrollArea):
                 data['position'] = ''
                 data['order_by'] = None
                 data['order_date'] = None
-            data['person_buisness'] = main_data[26] or ''
-            data['snils'] = main_data[27] or ''
-            data['inn'] = main_data[28] or ''
-            data['fizo_num'] = main_data[29] or ''
-            # вид финансового обеспечения (get_data возвращает financing_name
-            # перед колонками service_passing: ..., financing_name, division,
-            # position, order_by, order_date)
-            data['financing'] = (main_data[-5] if len(main_data) > 30 else '') or ''
+            data['person_buisness'] = val('person_buisness', '') or ''
+            data['snils'] = val('snils', '') or ''
+            data['inn'] = val('inn', '') or ''
+            data['fizo_num'] = val('fizo_num', '') or ''
+            # вид финансового обеспечения — доп. колонка financing_name,
+            # всегда последняя в результате get_data
+            data['financing'] = (main_data[-1] if cols and
+                                 len(main_data) > len(cols) else '') or ''
 
             # Фото: раньше оно могло сохраниться как hex-строка (text), из-за
             # чего loadFromData падал с TypeError. Приводим к bytes в любом случае.
-            blob = main_data[25]
+            blob = val('photo')
             if isinstance(blob, str):
                 try:
                     blob = bytes.fromhex(blob.strip())
@@ -381,33 +409,27 @@ class PersonWidget(QtWidgets.QScrollArea):
             nis_gr = QtWidgets.QGroupBox('НИС')
             nis_gr.setObjectName('GBox')
             form = QtWidgets.QFormLayout()
-            query = '''
-            SELECT 
-            ipoteka."user", 
-            ipoteka.finished, 
-            ipoteka."number", 
-            ipoteka.date_joining
-            FROM 
-            ipoteka
-            WHERE 
-            ipoteka."PID" = {};
-            '''.format(main_data[0])
-            res = self.db.select(query)
-            if res:
-                if res[-1][0]:
-                    print(res[-1][1])
-                    if res[-1][1] == 'True':
-                        t = 'Да'
-                    else:
-                        t = 'Нет'
-                    form.addRow('Реализовал ипотеку: ', QtWidgets.QLabel(t))
-                    form.addRow('Номер НИС: ', QtWidgets.QLabel(res[-1][2]))
-                    if res[-1][3]:
-                        form.addRow('Дата включения: ', QtWidgets.QLabel(res[-1][3].strftime(self.date_format) + ' г.'))
+            # НИС читаем через db.get_nis(): всегда последняя запись,
+            # флаги приводятся к bool ('True'/1/'Да' -> True) — раньше
+            # сравнение со строкой 'True' давало инверсию «Да»/«Нет»
+            nis = self.db.get_nis(main_data[0])
+            if nis:
+                is_user, finished, num, date_joining = nis
+                if is_user:
+                    form.addRow('Реализовал ипотеку: ',
+                                QtWidgets.QLabel('Да' if finished else 'Нет'))
+                    form.addRow('Номер НИС: ', QtWidgets.QLabel(num or ''))
+                    if date_joining:
+                        if hasattr(date_joining, 'strftime'):
+                            dj = date_joining.strftime(self.date_format)
+                        else:
+                            dj = str(date_joining)
+                        form.addRow('Дата включения: ',
+                                    QtWidgets.QLabel(dj + ' г.'))
                 else:
-                    form.addRow('',QtWidgets.QLabel('Не является участником НИС'))
+                    form.addRow('', QtWidgets.QLabel('Не является участником НИС'))
             else:
-                form.addRow('',QtWidgets.QLabel('Нет данных'))
+                form.addRow('', QtWidgets.QLabel('Нет данных'))
             nis_gr.setAlignment(QtCore.Qt.AlignVCenter)
             nis_gr.setLayout(form)
 
