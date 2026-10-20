@@ -87,6 +87,51 @@ class Database(object):
                 'CREATE INDEX IF NOT EXISTS idx_service_passing_pid '
                 'ON service_passing ("PID", order_date);')
             self.cursor.execute('PRAGMA foreign_keys=ON;')
+        # ---------- нормализация данных ----------
+        # 1) persons.photo: раньше фото могло сохраняться как hex-строка
+        #    (ASCII), из-за чего loadFromData получал str вместо bytes.
+        try:
+            rows = self.cursor.execute(
+                'SELECT "ID", photo FROM persons WHERE typeof(photo) = \'text\' '
+                'AND photo IS NOT NULL AND photo != \'\'').fetchall()
+            for rid, val in rows:
+                try:
+                    data = bytes.fromhex(val.strip())
+                except ValueError:
+                    continue
+                if data:
+                    self.cursor.execute(
+                        'UPDATE persons SET photo = ? WHERE "ID" = ?', (data, rid))
+        except Exception:
+            pass
+        # 2) ipoteka.user / ipoteka.finished: значения хранились вперемешку
+        #    ('True'/'False', 0/1, ''/NULL) — приводим к единому виду 0/1.
+        def norm_bool(col):
+            cur = self.cursor.execute(
+                'SELECT "ID", {} FROM ipoteka'.format(col)).fetchall()
+            for rid, val in cur:
+                if isinstance(val, bytes):
+                    val = val.decode('utf-8', 'ignore')
+                s = str(val).strip().lower() if val is not None else ''
+                new = 1 if s in ('true', '1', 'да', 'yes', 'y') else 0
+                if val != new:
+                    self.cursor.execute(
+                        'UPDATE ipoteka SET {} = ? WHERE "ID" = ?'.format(col),
+                        (new, rid))
+        try:
+            norm_bool('"user"')
+            norm_bool('finished')
+        except Exception:
+            pass
+        # 3) ipoteka: у одного сотрудника могла накопиться пачка строк
+        #    (добавление без удаления старых) — оставляем последнюю по ID.
+        try:
+            self.cursor.execute('''
+                DELETE FROM ipoteka WHERE "ID" NOT IN (
+                    SELECT MAX("ID") FROM ipoteka GROUP BY "PID");
+            ''')
+        except Exception:
+            pass
         self.connection.commit()
 
     def select(self, query):
@@ -213,11 +258,22 @@ class Database(object):
         return imported
 
     def get_data(self, person_ID):
-        # подразделение/должность/приказ берутся из последней по дате приказа
-        # строки таблицы «Прохождение службы» (service_passing)
+        # ВНИМАНИЕ: колонки division/position/order_by/order_date из persons
+        # исключаются (sp.* вместо p.*) — данные берутся из строки таблицы
+        # «Прохождение службы» с самой поздней датой приказа.
+        # Индексы результата: ..., [25]=photo, [26]=person_buisness, [27]=snils,
+        # [28]=inn, [29]=fizo_num, [30]=financing, [31]=financing_name,
+        # [32]=division, [33]=position, [34]=order_by, [35]=order_date
         data = self.select("""
             SELECT
-                p.*,
+                p."ID", p.lnum, p.second_name, p.first_name, p.patr,
+                p.place_of_birth, p.date_of_birth, p.gender, p.nation,
+                p.phone_num1, p.phone_num2, p.active, p.mil,
+                p.address_reg, p.address_living,
+                p.allowance_num, p.allowance_by, p.allowance_date,
+                p.priv, p.family_status, p.rank,
+                p.photo, p.person_buisness, p.snils, p.inn, p.fizo_num,
+                p.financing,
                 (SELECT name FROM financing WHERE financing."ID" = p.financing) AS financing_name,
                 sp.division,
                 sp.position,
@@ -231,27 +287,89 @@ class Database(object):
                 WHERE s."ID" = (
                     SELECT s2."ID" FROM service_passing s2
                     WHERE s2."PID" = s."PID"
-                    ORDER BY COALESCE(s2.order_date, '1900-01-01') DESC, s2."ID" DESC
+                      AND s2.order_date IS NOT NULL AND s2.order_date != ''
+                    ORDER BY s2.order_date DESC, s2."ID" DESC
                     LIMIT 1
                 )
             ) sp ON sp."PID" = p."ID"
             WHERE
                 p."ID" = '{}';
             """.format(person_ID))
+        if not data:
+            return data
+        row = data[0]
+        # если у записей службы нет ни одной даты приказа — берём последнюю добавленную
+        if row[32] is None and row[33] is None:
+            last = self.get_last_service_row(person_ID)
+            if last:
+                row = list(row)
+                row[32], row[33], row[34], row[35] = last
+                data = [tuple(row)]
         return data
 
     def get_last_service_row(self, person_ID):
-        """Последняя по дате приказа строка «Прохождения службы»:
-        (division, position, order_by, order_date) или None."""
+        """Строка «Прохождения службы» с самой поздней датой приказа:
+        (division, position, order_by, order_date) или None.
+
+        Записи без даты приказа считаются самыми старыми; при равных датах
+        берётся более поздняя по ID запись."""
         res = self.select('''
             SELECT division, position, order_by, order_date
             FROM service_passing
             WHERE service_passing."PID" = {}
-            ORDER BY COALESCE(service_passing.order_date, '1900-01-01') DESC,
+                  AND service_passing.order_date IS NOT NULL
+                  AND service_passing.order_date != ''
+            ORDER BY service_passing.order_date DESC,
                      service_passing."ID" DESC
             LIMIT 1;
         '''.format(int(person_ID)))
-        return res[0] if res else None    
+        if res:
+            return res[0]
+        # если ни одна запись не имеет даты приказа — берём последнюю добавленную
+        res = self.select('''
+            SELECT division, position, order_by, order_date
+            FROM service_passing
+            WHERE service_passing."PID" = {}
+            ORDER BY service_passing."ID" DESC
+            LIMIT 1;
+        '''.format(int(person_ID)))
+        return res[0] if res else None
+
+    def get_nis(self, person_ID):
+        """Актуальная запись НИС: (user, finished, number, date_joining) или None.
+
+        user/finished возвращаются как bool (приведение 'True'/1/да -> True)."""
+        res = self.select('''
+            SELECT "user", finished, "number", date_joining
+            FROM ipoteka
+            WHERE ipoteka."PID" = {}
+            ORDER BY ipoteka."ID" DESC
+            LIMIT 1;
+        '''.format(int(person_ID)))
+        if not res:
+            return None
+
+        def to_bool(v):
+            if isinstance(v, bytes):
+                v = v.decode('utf-8', 'ignore')
+            s = str(v).strip().lower() if v is not None else ''
+            return s in ('true', '1', 'да', 'yes', 'y')
+
+        r = res[0]
+        return (to_bool(r[0]), to_bool(r[1]), r[2], r[3])
+
+    def save_nis(self, person_ID, is_user, finished, number, date_joining):
+        """Сохраняет НИС сотрудника одной актуальной строкой (INSERT OR REPLACE
+        по PID), исключая накопление дублей и рассинхрон 'Да'/'Нет'."""
+        self.execute_n('''
+            DELETE FROM ipoteka WHERE ipoteka."PID" = ?;
+            INSERT INTO ipoteka ("PID", "user", finished, "number", date_joining)
+            VALUES (?, ?, ?, ?, ?);
+        ''', (person_ID, person_ID,
+              1 if is_user else 0,
+              1 if finished else 0,
+              number,
+              date_joining))    
     
         
 class DB(object):

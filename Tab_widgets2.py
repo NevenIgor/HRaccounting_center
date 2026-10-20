@@ -79,7 +79,18 @@ class PersonWidget(QtWidgets.QScrollArea):
             # position, order_by, order_date)
             data['financing'] = (main_data[-5] if len(main_data) > 30 else '') or ''
 
+            # Фото: раньше оно могло сохраниться как hex-строка (text), из-за
+            # чего loadFromData падал с TypeError. Приводим к bytes в любом случае.
             blob = main_data[25]
+            if isinstance(blob, str):
+                try:
+                    blob = bytes.fromhex(blob.strip())
+                except ValueError:
+                    blob = blob.encode('utf-8', 'ignore')
+            elif isinstance(blob, bytearray):
+                blob = bytes(blob)
+            if not isinstance(blob, bytes):
+                blob = None
             
             query = '''
             SELECT 
@@ -134,7 +145,10 @@ class PersonWidget(QtWidgets.QScrollArea):
             # self.img_label.setScaledContents(True)
             pixmap = QtGui.QPixmap()
             if blob:
-                pixmap.loadFromData(blob)
+                try:
+                    pixmap.loadFromData(blob)
+                except TypeError:
+                    pass  # фото повреждено — показываем пустую заглушку
             pixmap = pixmap.scaled(200, self.img_label.height(), QtCore.Qt.KeepAspectRatio)
             self.img_label.setPixmap(pixmap)
             self.img_label.setAlignment(QtCore.Qt.AlignCenter)
