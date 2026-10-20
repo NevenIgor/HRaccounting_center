@@ -158,6 +158,35 @@ class Database(object):
         data = self.cursor.fetchall()
         return data
 
+    @staticmethod
+    def parse_date(value):
+        """Приводит значение даты из БД к datetime.date.
+
+        В базе даты хранятся вперемешку: sqlite3 с PARSE_DECLTYPES возвращает
+        datetime/date-объекты, но строки вида '2000-01-01', '01.02.2000' и
+        пустые значения тоже встречаются — QDateEdit.setDate() на них падает
+        с TypeError. Возвращает None, если дату распознать не удалось."""
+        if value is None:
+            return None
+        if isinstance(value, datetime.datetime):
+            return value.date()
+        if isinstance(value, datetime.date):
+            return value
+        if isinstance(value, bytes):
+            value = value.decode('utf-8', 'ignore')
+        if isinstance(value, str):
+            s = value.strip()
+            if not s:
+                return None
+            for fmt in ('%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%d.%m.%Y',
+                        '%d.%m.%Y %H:%M:%S', '%Y/%m/%d'):
+                try:
+                    d = datetime.datetime.strptime(s, fmt)
+                    return d.date()
+                except ValueError:
+                    continue
+        return None
+
     
     def execute(self, query):
         res = self.cursor.executescript(query)
@@ -311,7 +340,13 @@ class Database(object):
         if not data:
             return data
         row = list(data[0])
-        # самые свежие данные о службе — из последней по дате приказа строки
+        # даты из БД могут быть строками — приводим к date, чтобы
+        # setDate()/отображение не падали с TypeError
+        for name in ('date_of_birth', 'allowance_date'):
+            i = self.col_index(name)
+            if i is not None and i < len(row):
+                row[i] = self.parse_date(row[i])
+        # самые свежие данные о службе — из записи с самой поздней датой приказа
         sp_row = self.get_last_service_row(person_ID)
         if sp_row:
             for name, value in zip(self.SERVICE_COLS, sp_row):
@@ -344,7 +379,8 @@ class Database(object):
             LIMIT 1;
         '''.format(int(person_ID)))
         if res:
-            return res[0]
+            d, p, o, dt = res[0]
+            return (d, p, o, self.parse_date(dt))
         # если ни одна запись не имеет даты приказа — берём последнюю добавленную
         res = self.select('''
             SELECT division, position, order_by, order_date
@@ -353,7 +389,10 @@ class Database(object):
             ORDER BY service_passing."ID" DESC
             LIMIT 1;
         '''.format(int(person_ID)))
-        return res[0] if res else None
+        if not res:
+            return None
+        d, p, o, dt = res[0]
+        return (d, p, o, self.parse_date(dt))
 
     def get_nis(self, person_ID):
         """Актуальная запись НИС: (user, finished, number, date_joining) или None.
