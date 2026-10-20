@@ -520,17 +520,86 @@ class UpdateWindow(QtWidgets.QMainWindow):
         
 
         
+
+        #====================================   Прохождение службы   ===========================
+
+        self.service_widget = QtWidgets.QWidget()
+        self.service_l = QtWidgets.QVBoxLayout()
+        self.service_person_l = QtWidgets.QGridLayout()
+
+        labels = []
+        labels.append(QtWidgets.QLabel('Условное наименование'))
+        labels.append(QtWidgets.QLabel('Действительное наименование'))
+        labels.append(QtWidgets.QLabel('Подразделение'))
+        labels.append(QtWidgets.QLabel('Должность'))
+        labels.append(QtWidgets.QLabel('Тарифный разряд'))
+        labels.append(QtWidgets.QLabel('Штатная категория'))
+        labels.append(QtWidgets.QLabel('Приказ'))
+        labels.append(QtWidgets.QLabel('Дата приказа'))
+
+        for idx, label in enumerate(labels):
+            label.setAlignment(QtCore.Qt.AlignHCenter)
+            self.service_person_l.addWidget(label, 0, idx)
+
+        self.service_cond_edit = QtWidgets.QLineEdit()
+        self.service_actual_edit = QtWidgets.QLineEdit()
+        self.service_division_edit = QtWidgets.QComboBox()
+        self.service_division_edit.setEditable(True)
+        self.service_position_edit = QtWidgets.QComboBox()
+        self.service_position_edit.setEditable(True)
+        self.service_tariff_edit = QtWidgets.QLineEdit()
+        self.service_staff_edit = QtWidgets.QLineEdit()
+        self.service_order_edit = QtWidgets.QLineEdit()
+        self.service_order_date_edit = QtWidgets.QDateEdit()
+        self.service_order_date_edit.setCalendarPopup(True)
+
+        self.service_person_l.addWidget(self.service_cond_edit, 1, 0)
+        self.service_person_l.addWidget(self.service_actual_edit, 1, 1)
+        self.service_person_l.addWidget(self.service_division_edit, 1, 2)
+        self.service_person_l.addWidget(self.service_position_edit, 1, 3)
+        self.service_person_l.addWidget(self.service_tariff_edit, 1, 4)
+        self.service_person_l.addWidget(self.service_staff_edit, 1, 5)
+        self.service_person_l.addWidget(self.service_order_edit, 1, 6)
+        self.service_person_l.addWidget(self.service_order_date_edit, 1, 7)
+
+        self.service_add_btn = QtWidgets.QPushButton(QtGui.QIcon(r'.\data\add.png'), '')
+        self.service_add_btn.clicked.connect(self.add_service)
+        self.service_person_l.addWidget(self.service_add_btn, 0, 8, 2, 1)
+
+        self.service_table = Table(0, 8, 4)
+        self.service_table.setHorizontalHeaderLabels(('Условное наименование', 'Действительное наименование',
+                                                      'Подразделение', 'Должность', 'Тарифный разряд',
+                                                      'Штатная категория', 'Приказ', 'Дата приказа'))
+        self.service_table.signal.connect(self.update_service)
+
+        self.service_l.addLayout(self.service_person_l)
+        self.service_l.addWidget(self.service_table)
+
+        self.service_widget.setLayout(self.service_l)
+
+
         #====================================       =========     ===========================
 
         self.tab_widget.addTab(self.person_data, 'Персональные данные')
         self.tab_widget.addTab(self.doc_widget, 'Документы')
         self.tab_widget.addTab(self.family_widget, 'Члены семьи')
+        self.tab_widget.addTab(self.service_widget, 'Прохождение службы')
         self.tab_widget.addTab(self.fizo_widget, 'ФИЗО')
         self.tab_widget.addTab(self.class_widget, 'Классная квалификация')
         self.tab_widget.addTab(self.nis_widget, 'НИС')
         self.tab_widget.addTab(self.lgot_widget, 'Льготы')
         self.tab_widget.addTab(self.dolg_widget, 'Долги')
         self.tab_widget.addTab(self.auto_widget, 'Авто')
+
+        # словари подразделений/должностей для вкладки «Прохождение службы»
+        res = self.db.select("SELECT name_full FROM divisions ORDER BY name_full ASC;")
+        if res:
+            for row in res:
+                self.service_division_edit.addItem(row[0])
+        res = self.db.select("SELECT name_full FROM positions ORDER BY name_full ASC;")
+        if res:
+            for row in res:
+                self.service_position_edit.addItem(row[0])
 
         self.setCentralWidget(central_w)
         
@@ -612,6 +681,26 @@ class UpdateWindow(QtWidgets.QMainWindow):
                                       f_date(self.class_table.item(i, 5).text()),
                                       f_date(self.class_table.item(i, 6).text()),
                                       self.class_table.item(i, 4).text(),))
+
+        for i in range(self.service_table.rowCount()):
+
+            query = """UPDATE service_passing SET conventional_name = ?,
+            actual_name = ?,
+            division = ?,
+            position = ?,
+            tariff_rank = ?,
+            staff_category = ?,
+            order_by = ?,
+            order_date = ?
+            WHERE "ID" = {}""".format(self.service_table.id_list[i])
+            self.db.execute_n(query, (self.service_table.item(i, 0).text(),
+                                      self.service_table.item(i, 1).text(),
+                                      self.service_table.item(i, 2).text(),
+                                      self.service_table.item(i, 3).text(),
+                                      self.service_table.item(i, 4).text(),
+                                      self.service_table.item(i, 5).text(),
+                                      self.service_table.item(i, 6).text(),
+                                      f_date(self.service_table.item(i, 7).text()),))
 
 
 
@@ -785,6 +874,40 @@ class UpdateWindow(QtWidgets.QMainWindow):
         self.class_table.setItem(self.class_table.rowCount() - 1, 6, QtWidgets.QTableWidgetItem(self.class_actual_to.text()))
 
         self.class_table.id_list.append(new_id)
+
+    def add_service(self):
+        cond = self.service_cond_edit.text()
+        actual = self.service_actual_edit.text()
+        division = self.service_division_edit.currentText()
+        position = self.service_position_edit.currentText()
+        tariff = self.service_tariff_edit.text()
+        staff = self.service_staff_edit.text()
+        order = self.service_order_edit.text()
+        date = self.service_order_date_edit.dateTime().toPyDateTime().date()
+
+        query = """
+        INSERT INTO service_passing
+        (PID, conventional_name, actual_name, division, position,
+         tariff_rank, staff_category, order_by, order_date)
+        VALUES ('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');
+        """.format(self.pid, cond, actual, division, position, tariff, staff, order, date)
+        try:
+            self.db.execute(query)
+        except Exception as e:
+            self.db.connection.commit()
+            self.error(str(e))
+
+        self.service_table.insertRow(self.service_table.rowCount())
+        self.service_table.setItem(self.service_table.rowCount() - 1, 0, QtWidgets.QTableWidgetItem(cond))
+        self.service_table.setItem(self.service_table.rowCount() - 1, 1, QtWidgets.QTableWidgetItem(actual))
+        self.service_table.setItem(self.service_table.rowCount() - 1, 2, QtWidgets.QTableWidgetItem(division))
+        self.service_table.setItem(self.service_table.rowCount() - 1, 3, QtWidgets.QTableWidgetItem(position))
+        self.service_table.setItem(self.service_table.rowCount() - 1, 4, QtWidgets.QTableWidgetItem(tariff))
+        self.service_table.setItem(self.service_table.rowCount() - 1, 5, QtWidgets.QTableWidgetItem(staff))
+        self.service_table.setItem(self.service_table.rowCount() - 1, 6, QtWidgets.QTableWidgetItem(order))
+        self.service_table.setItem(self.service_table.rowCount() - 1, 7, QtWidgets.QTableWidgetItem(self.service_order_date_edit.text()))
+
+        self.service_table.id_list.append(self.db.last_insert_id("service_passing", self.pid))
     
     def add_fizo(self):
         category = self.fizo_type_edit.currentText()
@@ -964,6 +1087,19 @@ class UpdateWindow(QtWidgets.QMainWindow):
             4: "vus"
         }
         self.update_table(typ, self.class_table, 'class', columns, (1, 3, 5, 6))
+
+    def update_service(self, typ):
+        columns = {
+            0: "conventional_name",
+            1: "actual_name",
+            2: "division",
+            3: "position",
+            4: "tariff_rank",
+            5: "staff_category",
+            6: "order_by",
+            7: "order_date"
+        }
+        self.update_table(typ, self.service_table, 'service_passing', columns, (7,))
 
     def update_table(self, typ, table, table_name, columns, data_format):
         if typ == 'delete':
@@ -1334,6 +1470,36 @@ class ChangeWindow(UpdateWindow):
                 self.auto_table.setItem(idx, 2, QtWidgets.QTableWidgetItem(line[2] or ''))
                 self.auto_table.setItem(idx, 3, QtWidgets.QTableWidgetItem(line[3] or ''))
                 self.auto_table.id_list.append(line[-1])
+
+        # Прохождение службы — загрузка существующих записей в таблицу редактирования
+        query = '''
+                    SELECT
+                    service_passing.conventional_name,
+                    service_passing.actual_name,
+                    service_passing.division,
+                    service_passing.position,
+                    service_passing.tariff_rank,
+                    service_passing.staff_category,
+                    service_passing.order_by,
+                    service_passing.order_date,
+                    service_passing."ID"
+                    FROM
+                    service_passing
+                    WHERE
+                    service_passing."PID" = {}
+                    ORDER BY
+                    service_passing.order_date ASC;
+                    '''.format(self.pid)
+        res = self.db.select(query)
+        if res:
+            def s_date(d):
+                return d.strftime(self.date_format) if hasattr(d, 'strftime') else (str(d) if d else '')
+            for idx, line in enumerate(res):
+                self.service_table.insertRow(self.service_table.rowCount())
+                for col in range(7):
+                    self.service_table.setItem(idx, col, QtWidgets.QTableWidgetItem(str(line[col] or '')))
+                self.service_table.setItem(idx, 7, QtWidgets.QTableWidgetItem(s_date(line[7])))
+                self.service_table.id_list.append(line[-1])
 
 
         query = '''
