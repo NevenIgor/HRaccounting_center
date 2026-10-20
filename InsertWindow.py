@@ -584,6 +584,40 @@ class UpdateWindow(QtWidgets.QMainWindow):
             return None
         return self.db.get_last_service_row(self.pid)
 
+    def sync_service_to_person(self):
+        """Синхронизирует колонки persons.division/position/order_by/order_date
+        со строкой «Прохождения службы», имеющей самую позднюю дату приказа.
+
+        Метод вызывается после каждого изменения таблицы службы и перед
+        сохранением персональных данных, чтобы главная страница всегда
+        отображала актуальные подразделение/должность/дату приказа."""
+        if not self.pid:
+            return
+        last = self.db.get_last_service_row(self.pid)
+        division, position, order_by, order_date = last if last else ('', '', '', None)
+        try:
+            self.db.execute_n(
+                '''UPDATE persons SET division = ?, position = ?,
+                   order_by = ?, order_date = ? WHERE "ID" = ?;''',
+                (division, position, order_by, order_date, int(self.pid)))
+        except Exception:
+            pass
+
+    @staticmethod
+    def _to_qdate(value):
+        """Любое значение даты (date/datetime/строка) -> валидный QDate или None."""
+        d = DB.parse_date(value)
+        if d is None:
+            return None
+        qd = QtCore.QDate(d.year, d.month, d.day)
+        return qd if qd.isValid() else None
+
+    def _set_date(self, widget, value):
+        """Безопасно устанавливает дату в QDateEdit (не падает на строках/None)."""
+        qd = self._to_qdate(value)
+        if qd is not None:
+            widget.setDate(qd)
+
     def full_save(self):
         self.add_dolg()
         self.add_lgot()
@@ -889,10 +923,7 @@ class UpdateWindow(QtWidgets.QMainWindow):
 
         # сразу обновляем данные главной страницы (последняя строка по дате приказа)
         self.sync_service_to_person()
-        last = self.get_last_service_row()
-        if last:
-            self.labels['division'].setText(last[0] or '')
-    
+
     def add_fizo(self):
         category = self.fizo_type_edit.currentText()
         rank = self.fizo_rank_edit.currentText()
@@ -1339,7 +1370,7 @@ class ChangeWindow(UpdateWindow):
         self.labels['patr'].setText(data['patr'])
         self.labels['number'].setText(data['number'])
         self.labels['rank'].setText(data['rank'])
-        self.labels['birthday_date'].setDate(data['birthday_date'])
+        self._set_date(self.labels['birthday_date'], data['birthday_date'])
         self.labels['place_of_birth'].setText(data['place_of_birth'])
         self.labels['nation'].setText(data['nation'])
         self.labels['gender'].setCurrentText(data['gender'])
@@ -1350,15 +1381,12 @@ class ChangeWindow(UpdateWindow):
             self.labels['status'].setCurrentText('ГП ВС РФ')
         if data['status1'] == 'False':
             self.labels['status1'].setCurrentText('Резерв')
-        self.labels['position'].setCurrentText(data['position'])
-        self.labels['division'].setCurrentText(data['division'])
-        self.labels['order'].setText(data['order'])
-        if data['order_date']:
-            self.labels['order_date'].setDate(data['order_date'])
+        # подразделение/должность/приказ больше нет на вкладке персональных
+        # данных — они берутся из «Прохождения службы» (см. get_last_service_row)
         self.labels['allowance'].setText(data['allowance'])
         self.labels['allowance_by'].setText(data['allowance_by'])
         if data['allowance_date']:
-            self.labels['allowance_date'].setDate(data['allowance_date'])
+            self._set_date(self.labels['allowance_date'], data['allowance_date'])
         self.labels['reg_addr'].setText(data['reg_addr'])
         self.labels['liv_addr'].setText(data['liv_addr'])
         self.labels['buisness'].setText(data['buisness'])
@@ -1695,8 +1723,6 @@ class ChangeWindow(UpdateWindow):
 
         # подразделение/должность/приказ — из последней строки «Прохождения службы»
         self.sync_service_to_person()
-        last = self.get_last_service_row()
-        self.labels['division'].setText((last[0] or '') if last else '')
         
     def update_data(self):
         self.close()
