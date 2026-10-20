@@ -3,7 +3,22 @@ import sqlite3
 import datetime
 
 
+def _to_bool(val):
+    """Приводит любое хранимое представление флага (0/1, 'True'/'False',
+    'Да'/'Нет', bytes, None) к bool."""
+    if isinstance(val, (bytes, bytearray)):
+        val = val.decode('utf-8', 'ignore')
+    if isinstance(val, str):
+        s = val.strip().lower()
+        return s in ('true', '1', 'да', 'yes', 'y', 'и')
+    return bool(val)
+
+
 class Database(object):
+    # имена колонок persons, данные для которых теперь берутся из последней
+    # по дате приказа строки таблицы service_passing
+    SERVICE_COLS = ('division', 'position', 'order_by', 'order_date')
+
     def __init__(self, db):
         host = '172.30.79.12'
         db_name = db
@@ -15,6 +30,10 @@ class Database(object):
                                             sqlite3.PARSE_COLNAMES)
         self.cursor = self.connection.cursor()
         self._migrate()
+        # кэш имён колонок таблицы persons (состав колонок может различаться
+        # в базах разных версий — индексы нельзя хардкодить)
+        self._persons_cols = [r[1] for r in self.cursor.execute(
+            'PRAGMA table_info(persons)').fetchall()]
 
     def _migrate(self):
         """Лёгкая миграция схемы: словарь финансового обеспечения + ссылка в persons."""
@@ -258,54 +277,55 @@ class Database(object):
         return imported
 
     def get_data(self, person_ID):
-        # ВНИМАНИЕ: колонки division/position/order_by/order_date из persons
-        # исключаются (sp.* вместо p.*) — данные берутся из строки таблицы
-        # «Прохождение службы» с самой поздней датой приказа.
-        # Индексы результата: ..., [25]=photo, [26]=person_buisness, [27]=snils,
-        # [28]=inn, [29]=fizo_num, [30]=financing, [31]=financing_name,
-        # [32]=division, [33]=position, [34]=order_by, [35]=order_date
-        data = self.select("""
+        """Возвращает список из одного кортежа со ВСЕМИ колонками таблицы
+        persons (порядок = PRAGMA table_info) плюс дополнительная колонка
+        financing_name в конце. Состав колонок не хардкодится — индексы
+        вычисляются по имени колонки (см. col_index), поэтому ошибка
+        IndexError при различиях схемы базы больше невозможна.
+
+        Подразделение/должность/приказ/дата приказа перезаписываются
+        значениями из строки таблицы «Прохождение службы» с самой поздней
+        датой приказа (get_last_service_row)."""
+        cols = self._persons_cols or [r[1] for r in self.cursor.execute(
+            'PRAGMA table_info(persons)').fetchall()]
+        sel_cols = ', '.join('p."{}"'.format(c) for c in cols)
+        query = '''
             SELECT
-                p."ID", p.lnum, p.second_name, p.first_name, p.patr,
-                p.place_of_birth, p.date_of_birth, p.gender, p.nation,
-                p.phone_num1, p.phone_num2, p.active, p.mil,
-                p.address_reg, p.address_living,
-                p.allowance_num, p.allowance_by, p.allowance_date,
-                p.priv, p.family_status, p.rank,
-                p.photo, p.person_buisness, p.snils, p.inn, p.fizo_num,
-                p.financing,
-                (SELECT name FROM financing WHERE financing."ID" = p.financing) AS financing_name,
-                sp.division,
-                sp.position,
-                sp.order_by,
-                sp.order_date
+                {},
+                (SELECT name FROM financing WHERE financing."ID" = p.financing)
+                    AS financing_name
             FROM
                 persons p
-            LEFT JOIN (
-                SELECT s."PID", s.division, s.position, s.order_by, s.order_date
-                FROM service_passing s
-                WHERE s."ID" = (
-                    SELECT s2."ID" FROM service_passing s2
-                    WHERE s2."PID" = s."PID"
-                      AND s2.order_date IS NOT NULL AND s2.order_date != ''
-                    ORDER BY s2.order_date DESC, s2."ID" DESC
-                    LIMIT 1
-                )
-            ) sp ON sp."PID" = p."ID"
             WHERE
-                p."ID" = '{}';
-            """.format(person_ID))
+                p."ID" = ?;
+            '''.format(sel_cols)
+        try:
+            self.cursor.execute(query, (int(person_ID),))
+            data = self.cursor.fetchall()
+        except Exception:
+            # если словарь financing отсутствует в старой базе
+            self.cursor.execute(
+                'SELECT {} FROM persons p WHERE p."ID" = ?;'.format(sel_cols),
+                (int(person_ID),))
+            data = self.cursor.fetchall()
         if not data:
             return data
-        row = data[0]
-        # если у записей службы нет ни одной даты приказа — берём последнюю добавленную
-        if row[32] is None and row[33] is None:
-            last = self.get_last_service_row(person_ID)
-            if last:
-                row = list(row)
-                row[32], row[33], row[34], row[35] = last
-                data = [tuple(row)]
-        return data
+        row = list(data[0])
+        # самые свежие данные о службе — из последней по дате приказа строки
+        sp_row = self.get_last_service_row(person_ID)
+        if sp_row:
+            for name, value in zip(self.SERVICE_COLS, sp_row):
+                i = self.col_index(name)
+                if i is not None and i < len(row):
+                    row[i] = value
+        return [tuple(row)]
+
+    def col_index(self, name):
+        """Индекс колонки таблицы persons по имени (None, если колонки нет)."""
+        try:
+            return self._persons_cols.index(name)
+        except ValueError:
+            return None
 
     def get_last_service_row(self, person_ID):
         """Строка «Прохождения службы» с самой поздней датой приказа:
