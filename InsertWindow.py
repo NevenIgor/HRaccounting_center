@@ -326,6 +326,8 @@ class UpdateWindow(QtWidgets.QMainWindow):
         labels.append(QtWidgets.QLabel('Модель'))
         labels.append(QtWidgets.QLabel('Гос. номер'))
         labels.append(QtWidgets.QLabel('Цвет'))
+        # новая графа «Год» на вкладке АВТО
+        labels.append(QtWidgets.QLabel('Год'))
 
         for idx, label in enumerate(labels):
             label.setAlignment(QtCore.Qt.AlignHCenter)
@@ -335,20 +337,24 @@ class UpdateWindow(QtWidgets.QMainWindow):
         self.auto_model_edit = QtWidgets.QLineEdit()
         self.auto_gos_num_edit = QtWidgets.QLineEdit()
         self.auto_color_edit = QtWidgets.QLineEdit()
+        self.auto_year_edit = QtWidgets.QLineEdit()
+        self.auto_year_edit.setPlaceholderText('Год')
+        self.auto_year_edit.setMaxLength(4)
 
         self.auto_person_l.addWidget(self.auto_brand_edit, 1, 0)
         self.auto_person_l.addWidget(self.auto_model_edit, 1, 1)
         self.auto_person_l.addWidget(self.auto_gos_num_edit, 1, 2)
         self.auto_person_l.addWidget(self.auto_color_edit, 1, 3)
+        self.auto_person_l.addWidget(self.auto_year_edit, 1, 4)
 
 
         self.auto_add_btn = QtWidgets.QPushButton(QtGui.QIcon(r'.\data\add.png'), '')
         self.auto_add_btn.clicked.connect(self.add_auto)
         self.auto_person_l.addWidget(self.auto_add_btn, 0, 6, 2, 1)
 
-        self.auto_table = Table(0, 4, 2)
+        self.auto_table = Table(0, 5, 2)
         self.auto_table.setHorizontalHeaderLabels(
-            ('Марка', 'Модель', 'Гос. номер', 'Цвет'))
+            ('Марка', 'Модель', 'Гос. номер', 'Цвет', 'Год'))
         self.auto_table.signal.connect(self.update_auto)
 
         self.auto_l.addLayout(self.auto_person_l)
@@ -1075,7 +1081,8 @@ class UpdateWindow(QtWidgets.QMainWindow):
             0: "brand",
             1: "model",
             2: "gos_num",
-            3: "color"
+            3: "color",
+            4: "year"
         }
         self.update_table(typ, self.auto_table, 'auto', columns, ())
 
@@ -1093,16 +1100,12 @@ class UpdateWindow(QtWidgets.QMainWindow):
 
     def update_service(self, typ):
         columns = {
-            0: "conventional_name",
-            1: "actual_name",
-            2: "division",
-            3: "position",
-            4: "tariff_rank",
-            5: "staff_category",
-            6: "order_by",
-            7: "order_date"
+            0: "position",
+            1: "division",
+            2: "order_by",
+            3: "order_date"
         }
-        self.update_table(typ, self.service_table, 'service_passing', columns, (7,))
+        self.update_table(typ, self.service_table, 'service_passing', columns, (3,))
 
     def update_table(self, typ, table, table_name, columns, data_format):
         if typ == 'delete':
@@ -1495,6 +1498,7 @@ class ChangeWindow(UpdateWindow):
                     auto.model, 
                     auto.gos_num, 
                     auto.color,
+                    auto.year,
                     auto."ID"
                     FROM 
                     auto 
@@ -1509,17 +1513,14 @@ class ChangeWindow(UpdateWindow):
                 self.auto_table.setItem(idx, 1, QtWidgets.QTableWidgetItem(line[1] or ''))
                 self.auto_table.setItem(idx, 2, QtWidgets.QTableWidgetItem(line[2] or ''))
                 self.auto_table.setItem(idx, 3, QtWidgets.QTableWidgetItem(line[3] or ''))
+                self.auto_table.setItem(idx, 4, QtWidgets.QTableWidgetItem(str(line[4] or '')))
                 self.auto_table.id_list.append(line[-1])
 
         # Прохождение службы — загрузка существующих записей в таблицу редактирования
         query = '''
                     SELECT
-                    service_passing.conventional_name,
-                    service_passing.actual_name,
-                    service_passing.division,
                     service_passing.position,
-                    service_passing.tariff_rank,
-                    service_passing.staff_category,
+                    service_passing.division,
                     service_passing.order_by,
                     service_passing.order_date,
                     service_passing."ID"
@@ -1536,9 +1537,10 @@ class ChangeWindow(UpdateWindow):
                 return d.strftime(self.date_format) if hasattr(d, 'strftime') else (str(d) if d else '')
             for idx, line in enumerate(res):
                 self.service_table.insertRow(self.service_table.rowCount())
-                for col in range(7):
-                    self.service_table.setItem(idx, col, QtWidgets.QTableWidgetItem(str(line[col] or '')))
-                self.service_table.setItem(idx, 7, QtWidgets.QTableWidgetItem(s_date(line[7])))
+                self.service_table.setItem(idx, 0, QtWidgets.QTableWidgetItem(str(line[0] or '')))
+                self.service_table.setItem(idx, 1, QtWidgets.QTableWidgetItem(str(line[1] or '')))
+                self.service_table.setItem(idx, 2, QtWidgets.QTableWidgetItem(str(line[2] or '')))
+                self.service_table.setItem(idx, 3, QtWidgets.QTableWidgetItem(s_date(line[3])))
                 self.service_table.id_list.append(line[-1])
 
 
@@ -1558,7 +1560,7 @@ class ChangeWindow(UpdateWindow):
                     self.lgot_w[int(el)].setChecked(True)
 
         query = '''
-                SELECT act_level, rank
+                SELECT act_level, rank, order_by
                 FROM fizo_act
                 WHERE 
                 fizo_act."PID" = '{}'
@@ -1567,6 +1569,8 @@ class ChangeWindow(UpdateWindow):
         if res:
             self.fizo_type_edit.setCurrentText(res[-1][0])
             self.fizo_rank_edit.setCurrentText(res[-1][1])
+            # графа «Приказ» на вкладке ФИЗО
+            self.fizo_order_edit.setText(str(res[-1][2] or ''))
 
         query = '''
                     SELECT 
