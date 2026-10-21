@@ -567,19 +567,22 @@ class FIZOWidget(QtWidgets.QScrollArea):
         self.date_format = "%d.%m.%Y"
         
         query = '''
-        SELECT act_level, rank
+        SELECT act_level, rank, order_by
         FROM fizo_act
         WHERE 
         fizo_act."PID" = '{}'
         '''.format(ID)
         res = self.db.select(query)
         if res:
-            level = res[-1][0]
-            rank = res[-1][1]
+            level = res[-1][0] or ''
+            rank = res[-1][1] or ''
+            order_by = res[-1][2] or ''
         
         form = QtWidgets.QFormLayout()
         form.addRow('Уровень ФП: ', QtWidgets.QLabel(level))
         form.addRow('Спортивный разряд: ', QtWidgets.QLabel(rank))
+        # новая графа «Приказ» на вкладке ФИЗО
+        form.addRow('Приказ: ', QtWidgets.QLabel(order_by))
         main_layout.addLayout(form)    
         
         query = """
