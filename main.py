@@ -1,5 +1,9 @@
 from PyQt5 import QtCore, QtWidgets, QtGui
 import openpyxl
+import csv
+import codecs
+import re
+import datetime
 
 
 from db_API import Database as DB
@@ -132,9 +136,20 @@ class MainWindow(QtWidgets.QMainWindow):
         import_menu.setToolTip('Перенести данные из базы (.db) старой версии. '
                                'Текущая база будет очищена (перед этим создан бекап).')
         import_menu.triggered.connect(self.import_db)
+        # кнопка скрыта от случайного нажатия — показывается по F4 вместе с
+        # «Импорт из CSV»
+        import_menu.setVisible(False)
+        self.import_menu = import_menu
 
         docs_menu = QtWidgets.QAction(QtGui.QIcon('./data/data.png'), 'Формы\nдокументов', self)
         docs_menu.triggered.connect(self.create_documents)
+
+        self.import_csv_menu = QtWidgets.QAction(QtGui.QIcon('./data/folder.png'), 'Импорт из\nCSV', self)
+        self.import_csv_menu.setToolTip('Загрузить «Прохождение службы» из CSV-файла: '
+                                        'личный номер, подразделение, должность, приказ, дата приказа. '
+                                        'Существующие записи не изменяются.')
+        self.import_csv_menu.triggered.connect(self.import_service_csv)
+        self.import_csv_menu.setVisible(False)
 
         # --- кнопка переключения чёрной темы (добавляется в конец тулбара) ---
 
@@ -177,6 +192,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tool_bar.addSeparator()
         self.tool_bar.addAction(im_export_menu)
         self.tool_bar.addAction(import_menu)
+        self.tool_bar.addAction(self.import_csv_menu)
         self.tool_bar.addSeparator()
 
         # кнопка темы — в конце горизонтального тулбара, текст сбоку от иконки
@@ -461,6 +477,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.doc_w.setWindowTitle('Документы')
         self.doc_w.show()
 
+    def keyPressEvent(self, event):
+        """F4 — показать/скрыть скрытые кнопки импорта (защита от случайного
+        нажатия «Импорт данных», который очищает базу)."""
+        if event.key() == QtCore.Qt.Key_F4:
+            visible = not self.import_menu.isVisible()
+            self.import_menu.setVisible(visible)
+            self.import_csv_menu.setVisible(visible)
+            self.statusbar.showMessage(
+                'Кнопки импорта {}'.format(
+                    'показаны (F4 — скрыть снова)' if visible
+                    else 'скрыты'), 5000)
+            return
+        super().keyPressEvent(event)
+
     def import_db(self):
         """Импорт данных из базы (.db) старой версии.
 
@@ -503,6 +533,43 @@ class MainWindow(QtWidgets.QMainWindow):
         # обновляем интерфейс после импорта
         self.splitter.replaceWidget(1, MainTab(None, parent=self))
         self.find()
+
+    def import_service_csv(self):
+        """Импорт «Прохождения службы» из CSV по личным номерам сотрудников.
+
+        Столбцы файла: личный номер, подразделение, должность, приказ,
+        дата приказа (дата может быть в разных форматах). Записи добавляются
+        в таблицу service_passing соответствующих сотрудников; база не очищается.
+        """
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, 'Выберите CSV-файл (л/н, подразделение, должность, приказ, дата)',
+            '', 'CSV файлы (*.csv);;Все файлы (*)')
+        if not file_path:
+            return
+        try:
+            result = self.db.import_service_csv(file_path)
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self, 'Ошибка импорта CSV',
+                'Не удалось выполнить импорт: {}'.format(e))
+            return
+
+        msg = ['Добавлено записей прохождения службы: {}'.format(result['imported'])]
+        if result['not_found']:
+            msg.append('Сотрудник не найден ({}):\n{}'.format(
+                len(result['not_found']), '\n'.join(result['not_found'][:20])))
+        if result['skipped']:
+            msg.append('Дата не распознана ({}), запись добавлена без даты:\n{}'.format(
+                len(result['skipped']), '\n'.join(result['skipped'][:20])))
+        QtWidgets.QMessageBox.information(
+            self, 'Импорт из CSV завершён', '\n\n'.join(msg))
+
+        # обновляем список и карточку сотрудника, чтобы сразу видеть новые данные
+        current = self.list.currentItem()
+        cur_id = self.list_items[current.text()] if current else None
+        self.find()
+        if cur_id is not None and cur_id in self.list_items.values():
+            self.chose_person(cur_id)
 
     def export(self):
         f = QtWidgets.QFileDialog.getSaveFileName(self, 'Сохранить как', 'Сотрудники.xlsx')
