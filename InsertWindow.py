@@ -1752,9 +1752,28 @@ class Table(QtWidgets.QTableWidget):
 
         self.horizontalHeader().sectionResized.connect(self.save_state)
 
-        if os.path.exists(os.path.join(self.conf_dir, self.ident)):
-            with open(os.path.join(self.conf_dir, self.ident), 'rb') as f:
-                self.horizontalHeader().restoreState(f.read())
+        state_path = os.path.join(self.conf_dir, self.ident)
+        if os.path.exists(state_path):
+            try:
+                with open(state_path, 'rb') as f:
+                    state = f.read()
+                # Сохранённое состояние заголовка могло быть записано для
+                # другого набора колонок (например, до добавления графы «Год»
+                # на вкладке АВТО). restoreState с несовместимым состоянием
+                # приводит к потере части заголовков — проверяем число секций
+                # в начале состояния (qint32 magic, qint32 version,
+                # qint32 sectionsCount) и удаляем устаревший файл.
+                nsec = int.from_bytes(state[8:12], 'big', signed=True) \
+                    if len(state) >= 12 else -1
+                if nsec == cols:
+                    self.horizontalHeader().restoreState(QtCore.QByteArray(state))
+                else:
+                    os.remove(state_path)
+            except Exception:
+                try:
+                    os.remove(state_path)
+                except Exception:
+                    pass
 
     def delete(self):
         result = QtWidgets.QMessageBox.question(None, "Удаление элемента",
