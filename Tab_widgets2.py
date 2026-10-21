@@ -516,7 +516,8 @@ class PersonWidget(QtWidgets.QScrollArea):
             auto.brand,
             auto.model,
             auto.gos_num,
-            auto.color
+            auto.color,
+            auto.year
             FROM
             auto
             WHERE
@@ -529,6 +530,8 @@ class PersonWidget(QtWidgets.QScrollArea):
                 form.addRow('Модель: ', QtWidgets.QLabel(row[1] or '—'))
                 form.addRow('Гос. номер: ', QtWidgets.QLabel(row[2] or '—'))
                 form.addRow('Цвет: ', QtWidgets.QLabel(row[3] or '—'))
+                # новая графа «Год» на вкладке АВТО
+                form.addRow('Год: ', QtWidgets.QLabel(str(row[4] or '—')))
             else:
                 form.addRow('',QtWidgets.QLabel('Нет автомобиля'))
             auto_gr.setLayout(form)

@@ -94,6 +94,11 @@ class MainWindow(QtWidgets.QMainWindow):
         
         self.db = DB(db)
 
+        # при каждом запуске приложения — светлая тема (новый интерфейс)
+        self._dark_on = False
+        style.set_dark_mode(False)
+        style.apply_theme(QtWidgets.QApplication.instance())
+
         self.tool_bar = QtWidgets.QToolBar()
         # тулбар — горизонтальный, сверху окна (привычнее и компактнее по высоте)
         self.tool_bar.setOrientation(QtCore.Qt.Horizontal)
@@ -723,7 +728,8 @@ if __name__ == '__main__':
 
     window = MainWindow('employees_center')
     window.resize(1200, 600)
-    ico = QtGui.QIcon('./data.logo.png')
+    # исправлен путь к иконке приложения (было './data.logo.png')
+    ico = QtGui.QIcon('./data/logo.png')
     window.setWindowTitle('СПО учёта личного состава')
     window.setWindowIcon(ico)
     window.showMaximized()
