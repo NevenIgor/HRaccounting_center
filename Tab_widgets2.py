@@ -568,6 +568,7 @@ class FIZOWidget(QtWidgets.QScrollArea):
         
         level = ''
         rank = ''
+        order_by = ''
 
         
         self.db = parent.db
