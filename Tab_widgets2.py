@@ -108,7 +108,7 @@ class PersonWidget(QtWidgets.QScrollArea):
                     'division': dv or '',
                     'order_by': o or '',
                     'order_date': _pd(dt),
-                } for p, dv, o, dt in self.db.get_service_history(main_data[0])
+                } for p, dv, o, dt in reversed(self.db.get_service_history(main_data[0]))
             ]
             data['person_buisness'] = val('person_buisness', '') or ''
             data['snils'] = val('snils', '') or ''
@@ -759,7 +759,8 @@ class ServiceWidget(QtWidgets.QScrollArea):
         WHERE
         service_passing."PID" = '{}'
         ORDER BY
-        service_passing.order_date ASC;
+        service_passing.order_date DESC,
+        service_passing."ID" DESC;
         """.format(ID)
         data = self.db.select(query)
         if data:

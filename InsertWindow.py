@@ -912,6 +912,46 @@ class UpdateWindow(QtWidgets.QMainWindow):
 
         self.service_table.id_list.append(self.db.last_insert_id("service_passing", self.pid))
 
+        # новая запись может быть самой свежей по дате приказа — перечитываем
+        # таблицу, чтобы строки всегда шли по дате приказа (сверху самые свежие)
+        self._reload_service_table()
+
+    def _reload_service_table(self):
+        """Перезагружает содержимое таблицы «Прохождение службы» из БД в
+        порядке убывания даты приказа (сверху самые свежие записи)."""
+        if not self.pid:
+            return
+        query = '''
+                    SELECT
+                    service_passing.position,
+                    service_passing.division,
+                    service_passing.order_by,
+                    service_passing.order_date,
+                    service_passing."ID"
+                    FROM
+                    service_passing
+                    WHERE
+                    service_passing."PID" = {}
+                    ORDER BY
+                    service_passing.order_date DESC,
+                    service_passing."ID" DESC;
+                    '''.format(self.pid)
+        res = self.db.select(query) or []
+
+        def s_date(d):
+            return d.strftime(self.date_format) if hasattr(d, 'strftime') else (str(d) if d else '')
+
+        while self.service_table.rowCount():
+            self.service_table.removeRow(0)
+        self.service_table.id_list = []
+        for idx, line in enumerate(res):
+            self.service_table.insertRow(self.service_table.rowCount())
+            self.service_table.setItem(idx, 0, QtWidgets.QTableWidgetItem(str(line[0] or '')))
+            self.service_table.setItem(idx, 1, QtWidgets.QTableWidgetItem(str(line[1] or '')))
+            self.service_table.setItem(idx, 2, QtWidgets.QTableWidgetItem(str(line[2] or '')))
+            self.service_table.setItem(idx, 3, QtWidgets.QTableWidgetItem(s_date(line[3])))
+            self.service_table.id_list.append(line[-1])
+
         # сразу обновляем данные главной страницы (последняя строка по дате приказа)
         self.sync_service_to_person()
 
@@ -1529,7 +1569,8 @@ class ChangeWindow(UpdateWindow):
                     WHERE
                     service_passing."PID" = {}
                     ORDER BY
-                    service_passing.order_date ASC;
+                    service_passing.order_date DESC,
+                    service_passing."ID" DESC;
                     '''.format(self.pid)
         res = self.db.select(query)
         if res:
@@ -1752,9 +1793,28 @@ class Table(QtWidgets.QTableWidget):
 
         self.horizontalHeader().sectionResized.connect(self.save_state)
 
-        if os.path.exists(os.path.join(self.conf_dir, self.ident)):
-            with open(os.path.join(self.conf_dir, self.ident), 'rb') as f:
-                self.horizontalHeader().restoreState(f.read())
+        state_path = os.path.join(self.conf_dir, self.ident)
+        if os.path.exists(state_path):
+            try:
+                with open(state_path, 'rb') as f:
+                    state = f.read()
+                # Сохранённое состояние заголовка могло быть записано для
+                # другого набора колонок (например, до добавления графы «Год»
+                # на вкладке АВТО). restoreState с несовместимым состоянием
+                # приводит к потере части заголовков — проверяем число секций
+                # в начале состояния (qint32 magic, qint32 version,
+                # qint32 sectionsCount) и удаляем устаревший файл.
+                nsec = int.from_bytes(state[8:12], 'big', signed=True) \
+                    if len(state) >= 12 else -1
+                if nsec == cols:
+                    self.horizontalHeader().restoreState(QtCore.QByteArray(state))
+                else:
+                    os.remove(state_path)
+            except Exception:
+                try:
+                    os.remove(state_path)
+                except Exception:
+                    pass
 
     def delete(self):
         result = QtWidgets.QMessageBox.question(None, "Удаление элемента",

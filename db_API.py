@@ -1,4 +1,7 @@
 import os
+import re
+import csv
+import codecs
 import sqlite3
 import datetime
 
@@ -409,6 +412,181 @@ class Database(object):
             return self._persons_cols.index(name)
         except ValueError:
             return None
+
+    def find_person_by_lnum(self, lnum):
+        """ID сотрудника по личному номеру (сравниваются только цифры),
+        либо None, если совпадений нет или оно неоднозначное."""
+        target = re.sub(r'\D', '', str(lnum or ''))
+        if not target:
+            return None
+        res = self.select('SELECT "ID", lnum FROM persons;')
+        matches = [r[0] for r in res
+                   if re.sub(r'\D', '', str(r[1] or '')) == target]
+        if len(matches) == 1:
+            return matches[0]
+        return None
+
+    @staticmethod
+    def parse_service_date(value):
+        """Пытается распознать дату приказа из CSV в разных форматах:
+        год/день/месяц могут идти в любом порядке, разделители — точка,
+        дефис, слэш (в т.ч. '01.02.00', 'Feb 3, 2000', '3 февраля 2000 г.').
+        Возвращает datetime.date или None."""
+        if value is None:
+            return None
+        if isinstance(value, bytes):
+            value = value.decode('utf-8', 'ignore')
+        if isinstance(value, datetime.datetime):
+            return value.date()
+        if isinstance(value, datetime.date):
+            return value
+        s = str(value).strip().lower().replace('\u00a0', ' ')
+        if not s:
+            return None
+        # числовые форматы: д?д?м?гггг через . - /
+        m = re.match(r'^(\d{1,4})[.\-/](\d{1,2})[.\-/](\d{2,4})', s)
+        if m:
+            a, b, c = (int(x) for x in m.groups())
+            if a > 31:                       # ГГГГ.ММ.ДД / ГГГГ-ММ-ДД
+                y, mo, d = a, b, c
+            elif c < 100:                    # две последние цифры года
+                y = 2000 + c if c <= 79 else 1900 + c
+                if b > 12:                   # ДД.ММ.ГГ
+                    d, mo = a, b
+                else:                        # ММ.ДД.ГГ (американский)
+                    mo, d = a, b
+                if mo > 12 and b <= 12:      # на случай ДД.ММ.ГГ с большим первым
+                    mo, d = b, a
+            else:
+                y = c
+                if b > 12:                   # ДД.ММ.ГГГГ
+                    d, mo = a, b
+                else:                        # ММ.ДД.ГГГГ (американский)
+                    mo, d = a, b
+            try:
+                return datetime.date(y, mo, d)
+            except ValueError:
+                pass
+        # текстовые форматы ('3 фев 2000', 'Feb 3rd, 2000', '2000-фев-03'...)
+        months = {
+            'янв': 1, 'фев': 2, 'мар': 3, 'апр': 4, 'май': 5, 'июн': 6,
+            'июл': 7, 'авг': 8, 'сен': 9, 'сент': 9, 'окт': 10, 'ноя': 11,
+            'дек': 12,
+            'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+            'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+        }
+        tokens = re.findall(r'[а-яa-z]+|\d+', s)
+        names = [t for t in tokens if t[:3] in months or t in ('may', 'mai', 'июн', 'июл')]
+        nums = [int(t) for t in tokens if t.isdigit()]
+        mon = year = None
+        rest = []
+        for n in nums:
+            if n > 31 and len(str(n)) >= 3:
+                year = n if n > 99 else 2000 + n
+            elif 1 <= n <= 12 and mon is None and any(
+                    t[:3] in months or t in months for t in tokens
+                    if not t.isdigit()):
+                continue
+            else:
+                rest.append(n)
+        for t in tokens:
+            if not t.isdigit():
+                key = t[:3]
+                if key in months:
+                    mon = months[key]
+                    break
+        day = None
+        if rest:
+            day = max(rest)
+            rest.remove(day)
+            if rest:
+                if mon is None:
+                    mon = rest[0]
+        if year is None and nums:
+            year = max(nums)
+        if mon and day and year:
+            try:
+                return datetime.date(year, mon, day)
+            except ValueError:
+                pass
+        # стандартные форматы через strptime
+        for fmt in ('%Y-%m-%d', '%d.%m.%Y', '%d-%m-%Y', '%d/%m/%Y',
+                    '%m/%d/%Y', '%Y/%m/%d', '%d %b %Y', '%d %B %Y',
+                    '%b %d, %Y', '%B %d, %Y', '%d.%m.%y', '%Y.%m.%d'):
+            try:
+                return datetime.datetime.strptime(s, fmt).date()
+            except ValueError:
+                continue
+        return None
+
+    def import_service_csv(self, file_path):
+        """Импорт «Прохождения службы» из CSV-файла.
+
+        Столбцы: личный номер, подразделение, должность, приказ, дата приказа
+        (дата может быть в разных форматах). Для каждого сотрудника создаётся
+        новая запись в service_passing; существующие записи не изменяются.
+        Первая строка-заголовок (содержит слово «личный») пропускается.
+        Возвращает dict: {'imported': N, 'skipped': [...], 'not_found': [...]}.
+        """
+        raw = open(file_path, 'rb').read()
+        if raw.startswith(codecs.BOM_UTF8):
+            text = raw.decode('utf-8-sig')
+        else:
+            text = None
+        if text is None:
+            for enc in ('utf-8', 'cp1251'):
+                try:
+                    text = raw.decode(enc)
+                    break
+                except UnicodeDecodeError:
+                    continue
+        if text is None:
+            raise ValueError('Не удалось определить кодировку файла')
+
+        dialect = 'excel'
+        try:
+            dialect = csv.Sniffer().sniff(text[:4096], delimiters=';,\t')
+            delimiter = dialect.delimiter
+        except csv.Error:
+            first_line = text.splitlines()[0] if text.splitlines() else ''
+            delimiter = ';' if first_line.count(';') >= first_line.count(',') \
+                else (',' if ',' in first_line else '\t')
+        rows_iter = csv.reader(text.splitlines(), delimiter=delimiter)
+
+        imported = 0
+        skipped = []
+        not_found = []
+        for row_no, row in enumerate(rows_iter, start=1):
+            cells = [c.strip() for c in row]
+            if not any(cells):
+                continue
+            # пропуск строки заголовков
+            joined = ' '.join(cells).lower()
+            if row_no == 1 and ('личн' in joined or 'lnum' in joined):
+                continue
+            lnum = cells[0] if len(cells) > 0 else ''
+            division = cells[1] if len(cells) > 1 else ''
+            position = cells[2] if len(cells) > 2 else ''
+            order_by = cells[3] if len(cells) > 3 else ''
+            date_raw = cells[4] if len(cells) > 4 else ''
+            person_id = self.find_person_by_lnum(lnum)
+            if person_id is None:
+                not_found.append('стр. {}: л/н {}'.format(row_no, lnum or '—'))
+                continue
+            date = Database.parse_service_date(date_raw)
+            if date is None and date_raw:
+                skipped.append('стр. {}: л/н {} — дата «{}» не распознана'.format(
+                    row_no, lnum, date_raw))
+            query = '''
+            INSERT INTO service_passing
+            (PID, division, position, order_by, order_date)
+            VALUES ({}, ?, ?, ?, ?);
+            '''.format(int(person_id))
+            self.execute_n(query, (division, position, order_by,
+                                   date.isoformat() if date else None))
+            imported += 1
+        self.connection.commit()
+        return {'imported': imported, 'skipped': skipped, 'not_found': not_found}
 
     def get_last_service_row(self, person_ID):
         """Строка «Прохождения службы» с самой поздней датой приказа:
