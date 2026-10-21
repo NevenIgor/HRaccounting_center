@@ -161,7 +161,9 @@ class PersonWidget(QtWidgets.QScrollArea):
                 data['class_actual_from'] = f_d(row[4])
                 data['class_actual_to'] = f_d(row[5])
                 data['class_vus'] = row[6]
-                # история предыдущих классностей (старые записи сохраняются)
+                # история предыдущих классностей (старые записи сохраняются);
+                # если запись всего одна — это текущая классность, историю
+                # показывать не нужно
                 data['class_history'] = [
                     {
                         'level': str(r[0]),
@@ -172,7 +174,7 @@ class PersonWidget(QtWidgets.QScrollArea):
                         'actual_to': f_d(r[5]),
                         'vus': r[6],
                     } for r in res[1:]
-                ]
+                ] if len(res) > 1 else []
 
             first_group = QtWidgets.QGroupBox('Персональные данные')
             first_group.setObjectName('GBox')
@@ -321,9 +323,10 @@ class PersonWidget(QtWidgets.QScrollArea):
             form.addRow('Приказ о назначении: ', self.labels['passage']['order'])
 
             # история должностей — отображается строчками ниже
-            # (по аналогии с историей классности)
+            # (по аналогии с историей классности); если запись всего одна —
+            # это текущая должность, историю показывать не нужно
             history = data.get('position_history', [])
-            if history:
+            if len(history) > 1:
                 hist_label = QtWidgets.QLabel('<b>История должностей:</b>')
                 hist_label.setStyleSheet('margin-top: 8px;')
                 form.addRow('', hist_label)
@@ -361,8 +364,9 @@ class PersonWidget(QtWidgets.QScrollArea):
                 form.addRow('Действительно по: ', self.labels['class']['class_actual_to'])
 
             # история предыдущих классностей — отображается строчками ниже
+            # (если запись всего одна — историю показывать не нужно)
             history = data.get('class_history', [])
-            if history:
+            if len(history) > 0:
                 hist_label = QtWidgets.QLabel('<b>История классности:</b>')
                 hist_label.setStyleSheet('margin-top: 8px;')
                 form.addRow('', hist_label)
