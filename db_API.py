@@ -62,6 +62,7 @@ class Database(object):
             'PRAGMA table_info(auto)').fetchall()]
         if acols and 'year' not in acols:
             self.cursor.execute("ALTER TABLE auto ADD COLUMN year varchar(4)")
+        self.connection.commit()
         # прохождение службы (вкладка сотрудника + окно редактирования)
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS service_passing (
@@ -396,13 +397,10 @@ class Database(object):
             i = self.col_index(name)
             if i is not None and i < len(row):
                 row[i] = self.parse_date(row[i])
-        # самые свежие данные о службе — из записи с самой поздней датой приказа
-        sp_row = self.get_last_service_row(person_ID)
-        if sp_row:
-            for name, value in zip(self.SERVICE_COLS, sp_row):
-                i = self.col_index(name)
-                if i is not None and i < len(row):
-                    row[i] = value
+        # подразделение/должность/приказ/дата приказа больше не хранятся в
+        # persons — они берутся из «Прохождения службы» (см.
+        # get_last_service_row / get_service_history), поэтому в результат
+        # get_data не подмешиваются
         return [tuple(row)]
 
     def col_index(self, name):
