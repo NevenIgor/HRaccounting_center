@@ -98,6 +98,18 @@ class PersonWidget(QtWidgets.QScrollArea):
                 data['position'] = ''
                 data['order_by'] = None
                 data['order_date'] = None
+            # история должностей (все записи «Прохождения службы», как история
+            # классности) — показывается на главной вкладке
+            def _pd(d):
+                return d.strftime(self.date_format) + ' г.' if hasattr(d, 'strftime') else (str(d) if d else '—')
+            data['position_history'] = [
+                {
+                    'position': p or '',
+                    'division': dv or '',
+                    'order_by': o or '',
+                    'order_date': _pd(dt),
+                } for p, dv, o, dt in self.db.get_service_history(main_data[0])
+            ]
             data['person_buisness'] = val('person_buisness', '') or ''
             data['snils'] = val('snils', '') or ''
             data['inn'] = val('inn', '') or ''
@@ -307,6 +319,23 @@ class PersonWidget(QtWidgets.QScrollArea):
             form.addRow('Подразделение: ', self.labels['passage']['division'])
             form.addRow('Должность: ', self.labels['passage']['position'])
             form.addRow('Приказ о назначении: ', self.labels['passage']['order'])
+
+            # история должностей — отображается строчками ниже
+            # (по аналогии с историей классности)
+            history = data.get('position_history', [])
+            if history:
+                hist_label = QtWidgets.QLabel('<b>История должностей:</b>')
+                hist_label.setStyleSheet('margin-top: 8px;')
+                form.addRow('', hist_label)
+                for h in history:
+                    txt = '{} — {}, приказ {} от {}'.format(
+                        h['position'] or '—',
+                        h['division'] or '—',
+                        h['order_by'] or '—',
+                        h['order_date'])
+                    item = QtWidgets.QLabel(txt)
+                    item.setStyleSheet('color: {};'.format(style.MUTED))
+                    form.addRow('', item)
             passage_gr.setLayout(form)
             
             self.labels['class'] = dict()
@@ -686,10 +715,12 @@ class DocsWidget(QtWidgets.QScrollArea):
         
         
 class ServiceWidget(QtWidgets.QScrollArea):
-    """Вкладка «Прохождение службы»: таблица записей о прохождении службы."""
+    """Вкладка «Прохождение службы»: таблица записей о прохождении службы.
 
-    HEADERS = ('Условное наименование', 'Действительное наименование', 'Подразделение',
-               'Должность', 'Тарифный разряд', 'Штатная категория', 'Приказ', 'Дата приказа')
+    По требованию в окне просмотра оставляем только поля
+    «Должность», «Подразделение», «Приказ», «Дата приказа»."""
+
+    HEADERS = ('Должность', 'Подразделение', 'Приказ', 'Дата приказа')
 
     def __init__(self, parent, ID):
         super().__init__()
@@ -702,18 +733,14 @@ class ServiceWidget(QtWidgets.QScrollArea):
         self.db = parent.db
         self.date_format = "%d.%m.%Y"
 
-        self.table = Table(0, 8, 'service_passing_tab')
+        self.table = Table(0, 4, 'service_passing_view_tab')
         self.table.setHorizontalHeaderLabels(self.HEADERS)
         main_layout.addWidget(self.table)
 
         query = """
         SELECT
-        service_passing.conventional_name,
-        service_passing.actual_name,
-        service_passing.division,
         service_passing.position,
-        service_passing.tariff_rank,
-        service_passing.staff_category,
+        service_passing.division,
         service_passing.order_by,
         service_passing.order_date
         FROM
@@ -727,10 +754,10 @@ class ServiceWidget(QtWidgets.QScrollArea):
         if data:
             for idx, line in enumerate(data):
                 self.table.insertRow(self.table.rowCount())
-                for col in range(7):
+                for col in range(3):
                     self.table.setItem(idx, col, QtWidgets.QTableWidgetItem(str(line[col] or '')))
-                _sd = line[7].strftime(self.date_format) + ' г.' if hasattr(line[7], 'strftime') else (str(line[7]) if line[7] else '')
-                self.table.setItem(idx, 7, QtWidgets.QTableWidgetItem(_sd))
+                _sd = line[3].strftime(self.date_format) + ' г.' if hasattr(line[3], 'strftime') else (str(line[3]) if line[3] else '')
+                self.table.setItem(idx, 3, QtWidgets.QTableWidgetItem(_sd))
 
         self.setWidget(widget)
         self.setWidgetResizable(True)

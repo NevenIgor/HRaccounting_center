@@ -52,6 +52,16 @@ class Database(object):
             for n in ('Федеральный бюджет', 'Внебюджетные средства',
                       'Средства бюджета субъекта РФ'):
                 self.cursor.execute('INSERT INTO financing(name) VALUES (?)', (n,))
+        # ---------- новые колонки: ФИЗО «Приказ», АВТО «Год» ----------
+        fcols = [r[1] for r in self.cursor.execute(
+            'PRAGMA table_info(fizo_act)').fetchall()]
+        if fcols and 'order_by' not in fcols:
+            self.cursor.execute(
+                "ALTER TABLE fizo_act ADD COLUMN order_by character varying(50)")
+        acols = [r[1] for r in self.cursor.execute(
+            'PRAGMA table_info(auto)').fetchall()]
+        if acols and 'year' not in acols:
+            self.cursor.execute("ALTER TABLE auto ADD COLUMN year varchar(4)")
         # прохождение службы (вкладка сотрудника + окно редактирования)
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS service_passing (
@@ -433,6 +443,21 @@ class Database(object):
             return None
         d, p, o, dt = res[0]
         return (d, p, o, self.parse_date(dt))
+
+    def get_service_history(self, person_ID):
+        """Вся история должностей сотрудника («Прохождение службы»):
+        список кортежей (position, division, order_by, order_date) в порядке
+        возрастания даты приказа (самая свежая запись — последней)."""
+        res = self.select('''
+            SELECT position, division, order_by, order_date
+            FROM service_passing
+            WHERE service_passing."PID" = {}
+            ORDER BY COALESCE(service_passing.order_date, '') ASC,
+                     service_passing."ID" ASC;
+        '''.format(int(person_ID)))
+        if not res:
+            return []
+        return [(p, d, o, self.parse_date(dt)) for p, d, o, dt in res]
 
     def get_nis(self, person_ID):
         """Актуальная запись НИС: (user, finished, number, date_joining) или None.
