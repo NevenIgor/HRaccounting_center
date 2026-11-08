@@ -588,10 +588,6 @@ class MainWindow(QtWidgets.QMainWindow):
             persons.person_buisness,
             persons.family_status,
             persons."rank",
-            persons.division,
-            persons.position,
-            persons.order_by,
-            persons.order_date,
             persons.place_of_birth, 
             persons.date_of_birth, 
             persons.gender, 
@@ -612,19 +608,19 @@ class MainWindow(QtWidgets.QMainWindow):
             ORDER BY persons.second_name
             '''
             res = self.db.select(query)
-            sheet.append(('Личный номер', 'ФИО', 'Фамилия', 'Имя', 'Отчество', 'Номер личного дела', 'Семейное положение', 'Звание', 'Подразделение',
-                          'Должность', 'Приказ', 'Дата приказа',
+            sheet.append(('Личный номер', 'ФИО', 'Фамилия', 'Имя', 'Отчество', 'Номер личного дела', 'Семейное положение', 'Звание',
                           'Место рождения', 'Дата рождения', 'Пол', 'Национальность',
                           'Телефон1', 'Телефон2', 'Адрес регистрации', 'Адрес проживания', 'Номер допуска', 'Кем допущен',
                           'Дата допуска', 'СНИЛС', 'ИНН', 'Номерок', 'Возрастная гр'))
             if res:
                 for row in res:
-
-                    years = datetime.datetime.now().year - row[12].year
-                    if datetime.datetime.now().month < row[12].month:
+                    print(type(row[8]), row[8])
+                    person_birthday = datetime.date.fromisoformat(row[8])
+                    years = datetime.datetime.now().year - person_birthday.year
+                    if datetime.datetime.now().month < person_birthday.month:
                         years -= 1
-                    elif datetime.datetime.now().month == row[12].month:
-                        if datetime.datetime.now().day < row[12].day:
+                    elif datetime.datetime.now().month == person_birthday.month:
+                        if datetime.datetime.now().day < person_birthday.day:
                             years -= 1
 
                     if years < 25:
