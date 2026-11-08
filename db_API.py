@@ -120,6 +120,38 @@ class Database(object):
                 'CREATE INDEX IF NOT EXISTS idx_service_passing_pid '
                 'ON service_passing ("PID", order_date);')
             self.cursor.execute('PRAGMA foreign_keys=ON;')
+        # ---------- история званий (отдельная вкладка «Звания») ----------
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS rank_passing (
+                "ID" INTEGER PRIMARY KEY AUTOINCREMENT,
+                "PID" integer,
+                rank character varying(100),
+                assignment_date date,
+                order_by character varying(100),
+                order_date date,
+                note character varying(300)
+            );
+        ''')
+        self.cursor.execute(
+            'CREATE INDEX IF NOT EXISTS idx_rank_passing_pid '
+            'ON rank_passing ("PID", order_date);')
+        # при первом создании таблицы истории званий переносим текущее
+        # звание сотрудника (persons.rank) как одну запись без дат —
+        # это сохраняет привычное отображение звания на главной странице
+        try:
+            cnt = self.cursor.execute(
+                'SELECT COUNT(*) FROM rank_passing').fetchone()[0]
+            if cnt == 0:
+                rows = self.cursor.execute(
+                    'SELECT "ID", rank FROM persons '
+                    'WHERE rank IS NOT NULL AND rank != \'\'').fetchall()
+                for pid, rk in rows:
+                    self.cursor.execute(
+                        'INSERT INTO rank_passing ("PID", rank) VALUES (?, ?)',
+                        (pid, rk))
+        except Exception:
+            pass
+        self.connection.commit()
         # ---------- нормализация данных ----------
         # 1) persons.photo: раньше фото могло сохраняться как hex-строка
         #    (ASCII), из-за чего loadFromData получал str вместо bytes.

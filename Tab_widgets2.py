@@ -82,7 +82,11 @@ class PersonWidget(QtWidgets.QScrollArea):
                 res = self.db.select("""SELECT family_status.name FROM family_status WHERE family_status."ID" = '{}';""".format(int(fam_id)))
                 if res:
                     data['family_status'] = res[0][0]
-            data['rank'] = val('rank', '') or ''
+            # звание (рядом с ФИО на главной странице) берём из последней
+            # по дате приказа записи истории званий (rank_passing); если
+            # записей нет — старое значение из persons.rank
+            data['rank'] = self.db.get_last_rank(main_data[0]) \
+                or val('rank', '') or ''
             # подразделение/должность/приказ — из последней по дате приказа
             # строки таблицы «Прохождение службы» (get_data подмешивает их
             # последними колонками: ..., financing_name, division, position,
@@ -98,18 +102,10 @@ class PersonWidget(QtWidgets.QScrollArea):
                 data['position'] = ''
                 data['order_by'] = None
                 data['order_date'] = None
-            # история должностей (все записи «Прохождения службы», как история
-            # классности) — показывается на главной вкладке
-            def _pd(d):
-                return d.strftime(self.date_format) + ' г.' if hasattr(d, 'strftime') else (str(d) if d else '—')
-            data['position_history'] = [
-                {
-                    'position': p or '',
-                    'division': dv or '',
-                    'order_by': o or '',
-                    'order_date': _pd(dt),
-                } for p, dv, o, dt in reversed(self.db.get_service_history(main_data[0]))
-            ]
+            # история должностей на главной вкладке больше не показывается —
+            # в подразделе «Должность» остаётся только текущая должность
+            # (последняя по дате приказа строка «Прохождения службы»),
+            # вся история доступна на отдельной вкладке «Прохождение службы»
             data['person_buisness'] = val('person_buisness', '') or ''
             data['snils'] = val('snils', '') or ''
             data['inn'] = val('inn', '') or ''
@@ -322,23 +318,8 @@ class PersonWidget(QtWidgets.QScrollArea):
             form.addRow('Должность: ', self.labels['passage']['position'])
             form.addRow('Приказ о назначении: ', self.labels['passage']['order'])
 
-            # история должностей — отображается строчками ниже
-            # (по аналогии с историей классности); если запись всего одна —
-            # это текущая должность, историю показывать не нужно
-            history = data.get('position_history', [])
-            if len(history) > 1:
-                hist_label = QtWidgets.QLabel('<b>История должностей:</b>')
-                hist_label.setStyleSheet('margin-top: 8px;')
-                form.addRow('', hist_label)
-                for h in history:
-                    txt = '{} — {}, приказ {} от {}'.format(
-                        h['position'] or '—',
-                        h['division'] or '—',
-                        h['order_by'] or '—',
-                        h['order_date'])
-                    item = QtWidgets.QLabel(txt)
-                    item.setStyleSheet('color: {};'.format(style.MUTED))
-                    form.addRow('', item)
+            # история должностей на главной вкладке не отображается —
+            # в подразделе «Должность» остаётся только текущая запись
             passage_gr.setLayout(form)
             
             self.labels['class'] = dict()
@@ -629,6 +610,12 @@ class FIZOWidget(QtWidgets.QScrollArea):
                 self.table.insertRow(self.table.rowCount())
                 for i in range(15):
                     self.table.setItem(idx, i, QtWidgets.QTableWidgetItem(line[i]))
+
+        # минимальная высота строк таблиц окна просмотра — 25 px
+        for row in range(self.table.rowCount()):
+            self.table.resizeRowToContents(row)
+            if self.table.rowHeight(row) < Table.MIN_ROW_HEIGHT:
+                self.table.setRowHeight(row, Table.MIN_ROW_HEIGHT)
         
         self.setWidget(widget)
         self.setWidgetResizable(True)
@@ -775,6 +762,61 @@ class ServiceWidget(QtWidgets.QScrollArea):
         self.setWidgetResizable(True)
 
 
+class RanksWidget(QtWidgets.QScrollArea):
+    """Вкладка «Звания»: история присвоения званий сотрудника (rank_passing).
+
+    Поля: Звание, Дата присвоения, Приказ, Дата приказа, Примечание."""
+
+    HEADERS = ('Звание', 'Дата присвоения', 'Приказ', 'Дата приказа', 'Примечание')
+
+    def __init__(self, parent, ID):
+        super().__init__()
+        widget = QtWidgets.QWidget()
+        main_layout = QtWidgets.QVBoxLayout(widget)
+
+        self.ID = ID
+        self.parent = parent
+
+        self.db = parent.db
+        self.date_format = "%d.%m.%Y"
+
+        self.table = Table(0, 5, 'rank_passing_view_tab')
+        self.table.setHorizontalHeaderLabels(self.HEADERS)
+        main_layout.addWidget(self.table)
+
+        query = """
+        SELECT
+        rank_passing.rank,
+        rank_passing.assignment_date,
+        rank_passing.order_by,
+        rank_passing.order_date,
+        rank_passing.note
+        FROM
+        rank_passing
+        WHERE
+        rank_passing."PID" = '{}'
+        ORDER BY
+        COALESCE(rank_passing.order_date, '') DESC,
+        rank_passing."ID" DESC;
+        """.format(ID)
+        data = self.db.select(query) or []
+        for idx, line in enumerate(data):
+            self.table.insertRow(self.table.rowCount())
+
+            def _d(d):
+                return d.strftime(self.date_format) + ' г.' \
+                    if hasattr(d, 'strftime') else (str(d) if d else '')
+
+            for col in (0, 2, 4):
+                self.table.setItem(idx, col,
+                                   QtWidgets.QTableWidgetItem(str(line[col] or '')))
+            self.table.setItem(idx, 1, QtWidgets.QTableWidgetItem(_d(line[1])))
+            self.table.setItem(idx, 3, QtWidgets.QTableWidgetItem(_d(line[3])))
+
+        self.setWidget(widget)
+        self.setWidgetResizable(True)
+
+
 class FamilyWidget(QtWidgets.QScrollArea):
     def __init__(self, parent, ID):
         super().__init__()
@@ -819,6 +861,9 @@ class FamilyWidget(QtWidgets.QScrollArea):
               
 
 class Table(QtWidgets.QTableWidget):
+    # минимальная высота строки во всех таблицах (окно просмотра)
+    MIN_ROW_HEIGHT = 25
+
     def __init__(self, rows, cols, ident, parent=None):
         super().__init__(rows, cols, parent=parent)
         
@@ -826,6 +871,10 @@ class Table(QtWidgets.QTableWidget):
 
         self.setAlternatingRowColors(True)
         self.verticalHeader().setVisible(False)
+        # фиксированный режим + set_row_height() ниже — строки никогда
+        # не будут меньше MIN_ROW_HEIGHT
+        self.verticalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.Fixed)
 
         self.horizontalHeader().setStretchLastSection(True)
         self.horizontalHeader().setCascadingSectionResizes(True)
@@ -843,11 +892,39 @@ class Table(QtWidgets.QTableWidget):
         self.horizontalHeader().sectionResized.connect(self.save_state)
         
         if os.path.exists(os.path.join(self.conf_dir, self.ident)):
-            with open(os.path.join(self.conf_dir, self.ident), 'rb') as f:
-                self.horizontalHeader().restoreState(f.read())
-        else:
-            self.resizeRowsToContents()
-        
+            try:
+                with open(os.path.join(self.conf_dir, self.ident), 'rb') as f:
+                    state = f.read()
+                # состояние заголовка могло быть сохранено для другого
+                # набора колонок — проверяем число секций в начале состояния
+                # (qint32 magic, qint32 version, qint32 sectionsCount)
+                nsec = int.from_bytes(state[8:12], 'big', signed=True) \
+                    if len(state) >= 12 else -1
+                if nsec == cols:
+                    self.horizontalHeader().restoreState(
+                        QtCore.QByteArray(state))
+                else:
+                    os.remove(os.path.join(self.conf_dir, self.ident))
+            except Exception:
+                pass
+        self.resizeRowsToContents()
+
+    def set_row_height(self, row):
+        """Минимальная высота строки MIN_ROW_HEIGHT; многострочные ячейки
+        растягиваются по содержимому."""
+        self.resizeRowToContents(row)
+        if self.rowHeight(row) < self.MIN_ROW_HEIGHT:
+            self.setRowHeight(row, self.MIN_ROW_HEIGHT)
+
+    def resizeRowsToContents(self):
+        super().resizeRowsToContents()
+        for row in range(self.rowCount()):
+            self.set_row_height(row)
+
+    def insertRow(self, row):
+        super().insertRow(row)
+        self.set_row_height(row)
+
     def save_state(self):
         with open(os.path.join(self.conf_dir, self.ident), 'wb') as f:
             f.write(self.horizontalHeader().saveState())
