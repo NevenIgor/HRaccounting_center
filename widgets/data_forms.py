@@ -1051,49 +1051,109 @@ class Ui_rewards_widget(object):
 import os
         
 class Table(QtWidgets.QTableWidget):
-    
+    # минимальная высота строки во всех таблицах (окна словарей)
+    MIN_ROW_HEIGHT = 25
+
     signal = QtCore.pyqtSignal(str)
-    
+
     def __init__(self, ident, parent=None):
         super().__init__(parent=parent)
-        
+
         self.ident = str(ident)
         self.id_list = list()
-        
+
         self.horizontalHeader().setStretchLastSection(True)
         self.horizontalHeader().setCascadingSectionResizes(True)
         self.setWordWrap(True)
         self.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
 
-        self.conf_dir = os.path.join(os.environ.get('APPDATA'), 'HRaccounting')
-        
-        self.context_menu = QtWidgets.QMenu()        
+        # строки никогда не будут меньше MIN_ROW_HEIGHT
+        self.verticalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.Fixed)
+        self.verticalHeader().setDefaultSectionSize(self.MIN_ROW_HEIGHT)
+        self.verticalHeader().setMinimumSectionSize(self.MIN_ROW_HEIGHT)
+
+        # кроссплатформенный каталог конфигурации (Windows: %APPDATA%, иначе ~/.config)
+        conf_root = os.environ.get('APPDATA') or os.path.expanduser('~/.config')
+        self.conf_dir = os.path.join(conf_root, 'HRaccounting')
+
+        self.context_menu = QtWidgets.QMenu()
         self.delete_action = QtWidgets.QAction(QtGui.QIcon(), 'Удалить', self)
         self.delete_action.triggered.connect(self.delete)
         self.context_menu.addAction(self.delete_action)
-        
+
         self.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked)
-        
+
         if not os.path.exists(self.conf_dir):
-            os.mkdir(self.conf_dir)
-    
+            os.makedirs(self.conf_dir, exist_ok=True)
+
+        # как в окне просмотра: состояние столбцов сохраняется при изменении
+        # ширины и восстанавливается при повторном открытии таблиц
+        self.horizontalHeader().sectionResized.connect(self.save_state)
+
     def keyPressEvent(self, e):
         if e.key() == 16777220:
             self.signal.emit('update')
-            
+
+    def set_row_height(self, row):
+        """Минимальная высота строки MIN_ROW_HEIGHT; многострочные ячейки
+        растягиваются по содержимому."""
+        if not (0 <= row < self.rowCount()):
+            return
+        self.resizeRowToContents(row)
+        if self.rowHeight(row) < self.MIN_ROW_HEIGHT:
+            self.setRowHeight(row, self.MIN_ROW_HEIGHT)
+
+    def resizeRowsToContents(self):
+        super().resizeRowsToContents()
+        for row in range(self.rowCount()):
+            self.set_row_height(row)
+
+    def insertRow(self, row):
+        super().insertRow(row)
+        self.set_row_height(row)
+
+    def removeRow(self, row):
+        super().removeRow(row)
+        for r in range(self.rowCount()):
+            self.set_row_height(r)
+
     def delete(self):
         result = QtWidgets.QMessageBox.question(None, "Удаление элемента", "Вы уверены что хотите удалить выделенные элементы?", defaultButton=QtWidgets.QMessageBox.No)
         if result == 16384:
             self.signal.emit('delete')
         
     def restore(self):
-        if os.path.exists(os.path.join(self.conf_dir, self.ident)):
-            with open(os.path.join(self.conf_dir, self.ident), 'rb') as f:
-                self.horizontalHeader().restoreState(f.read())
-        
-    def save_state(self):
-        with open(os.path.join(self.conf_dir, self.ident), 'wb') as f:
-            f.write(self.horizontalHeader().saveState())
+        state_path = os.path.join(self.conf_dir, self.ident)
+        if os.path.exists(state_path):
+            try:
+                with open(state_path, 'rb') as f:
+                    state = f.read()
+                # состояние заголовка могло быть сохранено для другого
+                # набора колонок — проверяем число секций в начале состояния
+                # (qint32 magic, qint32 version, qint32 sectionsCount)
+                nsec = int.from_bytes(state[8:12], 'big', signed=True) \
+                    if len(state) >= 12 else -1
+                if nsec == self.columnCount():
+                    self.horizontalHeader().restoreState(
+                        QtCore.QByteArray(state))
+            except Exception:
+                pass
+        # после восстановления (или вместо него) — базовая ширина по
+        # содержимому и минимальная высота строк
+        self.resizeColumnsToContents()
+        if os.path.exists(state_path):
+            try:
+                with open(state_path, 'rb') as f:
+                    state = f.read()
+                nsec = int.from_bytes(state[8:12], 'big', signed=True) \
+                    if len(state) >= 12 else -1
+                if nsec == self.columnCount():
+                    self.horizontalHeader().restoreState(
+                        QtCore.QByteArray(state))
+            except Exception:
+                pass
+        self.resizeRowsToContents()
             
     def contextMenuEvent(self, e):
         self.context_menu.exec_(e.globalPos())

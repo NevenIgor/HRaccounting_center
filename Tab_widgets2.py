@@ -907,6 +907,11 @@ class Table(QtWidgets.QTableWidget):
                     os.remove(os.path.join(self.conf_dir, self.ident))
             except Exception:
                 pass
+        # ширина столбцов по умолчанию = по содержимому (без перекоса
+        # из-за многострочных заголовков); после этого восстанавливается
+        # сохранённое пользователем состояние (см. выше) и любое изменение
+        # ширины снова сохраняется через sectionResized -> save_state
+        self.resizeColumnsToContents()
         self.resizeRowsToContents()
 
     def set_row_height(self, row):
