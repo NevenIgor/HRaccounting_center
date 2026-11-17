@@ -210,7 +210,10 @@ class UpdateWindow(QtWidgets.QMainWindow):
         self.class_add_btn.clicked.connect(self.add_class)
         self.class_person_l.addWidget(self.class_add_btn, 0, 7, 2, 1)
         
-        self.class_table = Table(0,7, 0)
+        # ident'ы таблиц окна редактирования отделены от ident'ов окон
+        # просмотра/словарей: сохранённое состояние столбцов не должно
+        # «протекать» между разными окнами с одинаковым числом колонок
+        self.class_table = Table(0, 7, 'edit_class')
         self.class_table.setHorizontalHeaderLabels(('Классность', 'Дата сдачи', 'Приказ', 'Дата приказа', 'ВУС', 'Актуально с', 'Актуально по'))
         self.class_table.signal.connect(self.update_class)
         
@@ -306,7 +309,7 @@ class UpdateWindow(QtWidgets.QMainWindow):
         self.doc_add_btn.clicked.connect(self.add_doc)
         self.doc_person_l.addWidget(self.doc_add_btn, 0, 7, 2, 1)
         
-        self.doc_table = Table(0,7, 1)
+        self.doc_table = Table(0, 7, 'edit_docs')
         self.doc_table.setHorizontalHeaderLabels(('Тип документа', 'Член семьи', 'Серия', 'Номер', 'Кем выдан', 'Код подразделения', 'Дата выдачи'))
         self.doc_table.signal.connect(self.update_docs)
         
@@ -352,7 +355,7 @@ class UpdateWindow(QtWidgets.QMainWindow):
         self.auto_add_btn.clicked.connect(self.add_auto)
         self.auto_person_l.addWidget(self.auto_add_btn, 0, 6, 2, 1)
 
-        self.auto_table = Table(0, 5, 2)
+        self.auto_table = Table(0, 5, 'edit_auto')
         self.auto_table.setHorizontalHeaderLabels(
             ('Марка', 'Модель', 'Гос. номер', 'Цвет', 'Год'))
         self.auto_table.signal.connect(self.update_auto)
@@ -487,7 +490,7 @@ class UpdateWindow(QtWidgets.QMainWindow):
         self.family_add_btn.clicked.connect(self.add_family)
         self.family_person_l.addWidget(self.family_add_btn, 0, 5, 2, 1)
         
-        self.family_table = Table(0,5, 3)
+        self.family_table = Table(0, 5, 'edit_family')
         self.family_table.setHorizontalHeaderLabels(('Степень родства', 'Фамилия', 'Имя', 'Отчество', 'Дата рождения'))
         self.family_table.signal.connect(self.update_family)
         
@@ -534,7 +537,7 @@ class UpdateWindow(QtWidgets.QMainWindow):
         self.service_add_btn.clicked.connect(self.add_service)
         self.service_person_l.addWidget(self.service_add_btn, 0, 4, 2, 1)
 
-        self.service_table = Table(0, 4, 4)
+        self.service_table = Table(0, 4, 'edit_service')
         self.service_table.setHorizontalHeaderLabels(('Должность', 'Подразделение',
                                                       'Приказ', 'Дата приказа'))
         self.service_table.signal.connect(self.update_service)
@@ -1764,6 +1767,8 @@ class ChangeWindow(UpdateWindow):
 
 
 class Table(QtWidgets.QTableWidget):
+    # минимальная высота строки во всех таблицах (в т.ч. окна редактирования)
+    MIN_ROW_HEIGHT = 25
     signal = QtCore.pyqtSignal(str)
 
     def __init__(self, rows, cols, ident, parent=None):
@@ -1776,6 +1781,13 @@ class Table(QtWidgets.QTableWidget):
         self.horizontalHeader().setCascadingSectionResizes(True)
         self.setWordWrap(True)
         self.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+
+        # строки никогда не будут меньше MIN_ROW_HEIGHT
+        self.verticalHeader().setVisible(False)
+        self.verticalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.Fixed)
+        self.verticalHeader().setDefaultSectionSize(self.MIN_ROW_HEIGHT)
+        self.verticalHeader().setMinimumSectionSize(self.MIN_ROW_HEIGHT)
 
         self.context_menu = QtWidgets.QMenu()
         self.delete_action = QtWidgets.QAction(QtGui.QIcon(), 'Удалить', self)
@@ -1815,6 +1827,36 @@ class Table(QtWidgets.QTableWidget):
                     os.remove(state_path)
                 except Exception:
                     pass
+
+        # ширина столбцов по умолчанию = по содержимому; сохранённое
+        # пользователем состояние восстанавливается выше, а любое изменение
+        # ширины снова сохраняется через sectionResized -> save_state
+        self.resizeColumnsToContents()
+        self.resizeRowsToContents()
+
+    def set_row_height(self, row):
+        """Минимальная высота строки MIN_ROW_HEIGHT; многострочные ячейки
+        растягиваются по содержимому."""
+        if not (0 <= row < self.rowCount()):
+            return
+        self.resizeRowToContents(row)
+        if self.rowHeight(row) < self.MIN_ROW_HEIGHT:
+            self.setRowHeight(row, self.MIN_ROW_HEIGHT)
+
+    def resizeRowsToContents(self):
+        super().resizeRowsToContents()
+        for row in range(self.rowCount()):
+            self.set_row_height(row)
+
+    def insertRow(self, row):
+        super().insertRow(row)
+        self.set_row_height(row)
+
+    def removeRow(self, row):
+        super().removeRow(row)
+        # после удаления строки высоты оставшихся строк пересчитываем
+        for r in range(self.rowCount()):
+            self.set_row_height(r)
 
     def delete(self):
         result = QtWidgets.QMessageBox.question(None, "Удаление элемента",
